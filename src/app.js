@@ -26,7 +26,7 @@ const els = [
   'ringModal', 'ringText', 'btnRingAccept', 'btnRingDecline',
   'homeScreen', 'greeting', 'btnCall', 'btnJoin', 'joinCode', 'btnPractice', 'homeStatus', 'btnSignOut',
   'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'videoPark', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
-  'btnMute', 'btnCam', 'btnSwap', 'btnGames', 'btnHangup',
+  'btnMute', 'btnCam', 'btnGames', 'btnHangup',
   'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
   'gameLayer', 'btnLeaveGame', 'btnControls', 'btnTableMode', 'tableLayer',
   'oppBar', 'pileLabel', 'pileArea', 'pileCards', 'turnBanner', 'handArea',
@@ -316,7 +316,7 @@ function newParty() {
     }
     v.srcObject = stream;
     layout();
-    if (tableMode) buildTableSpots(); // a feed just became available for an avatar
+    if (gameActive) buildTableSpots(); // a feed just became available for an avatar
   };
 
   party.onPeerJoin = (peerId) => {
@@ -341,7 +341,7 @@ function newParty() {
       // A seated human dropped mid-round: an AI takes over their hand.
       seats[seat] = { isAI: true, name: `${name} (AI)`, peerId: null };
       showToast(`${name} left — AI plays their hand`, 3500);
-      if (tableMode) buildTableSpots();
+      if (gameActive) buildTableSpots();
       if (iAmAuthority) { broadcastSeats(); broadcast(); }
     } else {
       showToast(`${name} left the call`, 2500);
@@ -498,16 +498,6 @@ els.btnGames.onclick = () => {
 
 // ---------------------------------------------------------------- layout
 
-// 'me' = your own mirrored feed is the game table and the cards overlay it
-// (AR feel: you see your real hand pinch the cards). 'them' = partners
-// fullscreen, you in a corner tile. The 🔁 button swaps.
-let mainView = 'me';
-
-els.btnSwap.onclick = () => {
-  mainView = mainView === 'me' ? 'them' : 'me';
-  layout();
-};
-
 function feltEl() {
   const bg = document.createElement('div');
   bg.className = 'table-bg';
@@ -525,26 +515,31 @@ function keepPlaying() {
 }
 
 function layout() {
-  if (tableMode && gameActive) {
-    // Table mode: the whole screen is the felt; avatars replace video views.
-    // Videos move to the hidden park (NOT out of the DOM) so they keep
-    // decoding — the avatar cutouts sample frames from them.
-    els.videoGrid.replaceChildren(feltEl());
-    els.videoGrid.dataset.count = 0;
-    els.videoPark.replaceChildren(...allVideos());
+  if (gameActive) {
+    // In-game, opponents live in their table-style spots (video circles with
+    // card backs), so the strip and swap go away in both modes. Remote videos
+    // move to the hidden park (NOT out of the DOM) so they keep decoding —
+    // the spot avatars sample frames from them. Camera mode keeps your own
+    // feed as the AR table; Table Mode swaps it for the felt.
+    if (tableMode || !localStream) {
+      els.videoGrid.replaceChildren(feltEl());
+      els.videoGrid.dataset.count = 0;
+      els.videoPark.replaceChildren(...allVideos());
+    } else {
+      els.videoGrid.replaceChildren(els.localVideo);
+      els.videoGrid.dataset.count = 1;
+      els.videoPark.replaceChildren(...remoteVideos.values());
+    }
     keepPlaying();
     els.tileStrip.replaceChildren();
     show(els.tileStrip, false);
-    show(els.btnSwap, false);
     return;
   }
+  // Plain call: partners fullscreen, you in a corner tile (or just you, solo).
   const remotes = [...remoteVideos.values()];
   const haveCam = !!localStream;
-  // During a game your own feed is the table; in a plain call your partner is.
-  const preferMe = gameActive ? mainView !== 'them' : mainView === 'me' && remotes.length === 0;
-  const meMain = haveCam && (preferMe || remotes.length === 0);
-  const main = meMain ? [els.localVideo] : remotes;
-  const tiles = meMain ? remotes : haveCam ? [els.localVideo] : [];
+  const main = remotes.length ? remotes : haveCam ? [els.localVideo] : [];
+  const tiles = remotes.length && haveCam ? [els.localVideo] : [];
 
   if (main.length) {
     els.videoGrid.replaceChildren(...main);
@@ -555,7 +550,6 @@ function layout() {
   }
   els.tileStrip.replaceChildren(...tiles);
   show(els.tileStrip, tiles.length > 0);
-  show(els.btnSwap, haveCam && remotes.length > 0);
   keepPlaying();
 }
 
@@ -584,21 +578,23 @@ function setTableMode(on, fromRemote = false) {
   if (tableMode === on) return;
   tableMode = on;
   els.btnTableMode.classList.toggle('on', on);
-  els.callScreen.classList.toggle('table-on', on);
-  show(els.tableLayer, on);
-  layout();
-  if (on) { buildTableSpots(); avatars.start(); }
-  else { avatars.stop(); els.tableLayer.replaceChildren(); }
+  layout();          // felt <-> your camera feed
+  buildTableSpots(); // add/remove the self spot
   if (!fromRemote && !DEMO) party?.send('table', { on });
 }
 
+// Spots are shown for every opponent during ANY game (camera or table mode):
+// avatar circle, name + count, and their hand as face-down card backs so
+// plays visibly come from somewhere. Table mode adds your own self spot.
 function buildTableSpots() {
   els.tableLayer.replaceChildren();
+  if (!gameActive) return;
   const n = seats.length;
   if (!SPOT_POS[n]) return;
   const entries = [];
   for (let i = 0; i < n; i++) {
     const rel = (i - mySeat + n) % n;
+    if (rel === 0 && !tableMode) continue; // self spot only on the felt
     const spot = document.createElement('div');
     spot.className = 'player-spot' + (rel === 0 ? ' self' : '');
     spot.dataset.seat = i;
@@ -611,6 +607,11 @@ function buildTableSpots() {
     const label = document.createElement('div');
     label.className = 'spot-label';
     spot.append(canvas, label);
+    if (rel > 0) {
+      const mini = document.createElement('div');
+      mini.className = 'mini-cards';
+      spot.append(mini);
+    }
     els.tableLayer.appendChild(spot);
     const s = seats[i];
     const video = i === mySeat
@@ -635,6 +636,17 @@ function updateTableSpots(snap) {
     spot.classList.toggle('turn', snap.turn === i && snap.winner < 0);
     const label = spot.querySelector('.spot-label');
     if (label) label.innerHTML = `${seatName(i)} · <span class="cnt">${snap.counts[i]}</span>`;
+    const mini = spot.querySelector('.mini-cards');
+    if (mini) {
+      const want = Math.min(snap.counts[i], 13);
+      if (mini.children.length !== want) {
+        mini.replaceChildren(...Array.from({ length: want }, () => {
+          const b = document.createElement('div');
+          b.className = 'back-card';
+          return b;
+        }));
+      }
+    }
   }
 }
 
@@ -720,11 +732,14 @@ els.btnControls.onclick = () => {
 async function showGame() {
   gameActive = true;
   show(els.gameLayer, true);
+  show(els.tableLayer, true);
   els.callScreen.classList.add('gaming');
   show(els.btnControls, !!localStream); // no camera -> nothing to toggle
   show(els.btnTableMode, iAmAuthority);
   renderControlsBtn();
   layout();
+  buildTableSpots();
+  avatars.start();
   if (controlMode === 'gesture') await startGestures();
 }
 
@@ -735,6 +750,9 @@ function hideGame() {
   engine = null;
   state = null;
   selected.clear();
+  avatars.stop();
+  els.tableLayer.replaceChildren();
+  show(els.tableLayer, false);
   show(els.gameLayer, false);
   show(els.gameOver, false);
   lastPileKey = '';
@@ -929,7 +947,7 @@ function applyState(snap) {
   const yourTurn = snap.turn === snap.you && snap.winner < 0;
   els.turnBanner.textContent = snap.winner >= 0 ? '' : yourTurn ? 'Your turn' : `${seatName(snap.turn)}'s turn…`;
   els.turnBanner.classList.toggle('yours', yourTurn);
-  if (tableMode) updateTableSpots(snap);
+  if (gameActive) updateTableSpots(snap);
   refreshHand();
 
   if (snap.winner >= 0) {

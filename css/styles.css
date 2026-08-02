@@ -250,8 +250,9 @@ button.linkish:hover { color: var(--text); }
   overflow: hidden; opacity: 0.01; pointer-events: none; z-index: 0;
 }
 .video-park video { width: 4px; height: 4px; }
-.table-layer { position: absolute; inset: 0; z-index: 1; }
-.table-on .opp-bar, .table-on .tile-strip { display: none; }
+.table-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+/* spots replace the chip bar and tile strip whenever a game is up */
+.gaming .opp-bar, .gaming .tile-strip { display: none; }
 .player-spot {
   position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 2;
@@ -273,6 +274,19 @@ button.linkish:hover { color: var(--text); }
 }
 .spot-label { padding: 4px 13px; font-size: 0.85rem; white-space: nowrap; }
 .spot-label .cnt { font-weight: 800; color: var(--accent-2); }
+
+/* opponents' hands, face down under their video circle */
+.mini-cards { display: flex; margin-top: 2px; }
+.back-card {
+  width: clamp(13px, 1.6vw, 18px); aspect-ratio: 5/7; border-radius: 3px;
+  margin-left: calc(clamp(13px, 1.6vw, 18px) * -0.55);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.16) 0 18%, transparent 20%),
+    linear-gradient(150deg, #6d5cd9, #3b2f8f);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+.back-card:first-child { margin-left: 0; }
 
 .modal {
   position: absolute; inset: 0; z-index: 20; display: grid; place-items: center;
@@ -473,10 +487,6 @@ button.action:disabled { opacity: 0.3; cursor: default; }
     justify-content: flex-end; gap: 6px;
   }
   .tile-strip video { width: clamp(68px, 21vw, 110px); }
-  /* in-game: drop below the opponent chips and shrink further */
-  .gaming .tile-strip { top: calc(94px + var(--sat)); }
-  .gaming .tile-strip video { width: clamp(56px, 17vw, 92px); }
-
   .code-banner { font-size: 0.85rem; padding: 6px 12px; max-width: 94vw; }
   .actions { gap: 8px; }
   button.action { padding: 10px 18px; font-size: 0.95rem; min-height: 44px; }
