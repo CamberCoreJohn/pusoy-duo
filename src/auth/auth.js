@@ -7,7 +7,7 @@ import { firebaseConfig } from './firebase-config.js';
 
 export const authAvailable = !!firebaseConfig;
 
-const GUEST_KEY = 'pusoy-duo-guest-name';
+const GUEST_KEY = 'pineapple-guest-name';
 
 let fb = null; // { auth, api } once initialized
 

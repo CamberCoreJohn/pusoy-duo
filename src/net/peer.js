@@ -5,7 +5,7 @@
 //
 // Loaded from CDN in index.html as a global `Peer`.
 
-const ROOM_PREFIX = 'pusoy-duo-';
+const ROOM_PREFIX = 'pineapple-';
 
 const randomCode = () => {
   const letters = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no easily-confused chars

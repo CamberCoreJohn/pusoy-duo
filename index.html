@@ -7,14 +7,14 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#0b1220" />
-  <title>Pusoy Duo — video calls with games</title>
+  <title>Pineapple — video calls with games</title>
   <link rel="stylesheet" href="css/styles.css" />
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
   <!-- Auth -->
   <div id="authScreen" class="screen center-screen">
-    <h1>Pusoy&nbsp;Duo <span class="heart">♥</span></h1>
+    <h1>Pineapple <span class="heart">🍍</span></h1>
     <p class="tagline">Video calls with games built in.</p>
     <div class="panel">
       <div id="authTabs" class="seg wide hidden">
@@ -35,7 +35,7 @@
 
   <!-- Home -->
   <div id="homeScreen" class="screen center-screen hidden">
-    <h1>Pusoy&nbsp;Duo <span class="heart">♥</span></h1>
+    <h1>Pineapple <span class="heart">🍍</span></h1>
     <p class="tagline" id="greeting"></p>
     <div class="panel">
       <button id="btnCall" class="big">📞 Start a call</button>
@@ -93,6 +93,8 @@
     <div id="gameLayer" class="hidden">
       <button id="btnLeaveGame" class="leave-game" title="Back to the call">✕</button>
       <button id="btnControls" class="leave-game ctrl-toggle hidden" title="Switch controls">🖐️</button>
+      <button id="btnTableMode" class="leave-game table-toggle hidden" title="Table mode">🎴</button>
+      <div id="tableLayer" class="table-layer hidden"></div>
       <div id="oppBar" class="opp-bar"></div>
       <div id="pileArea" class="pile-area">
         <div id="pileLabel" class="pile-label"></div>

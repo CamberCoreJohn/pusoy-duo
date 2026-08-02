@@ -1,4 +1,4 @@
-// Pusoy Duo — orchestrator. A video-calling app first; games overlay the call.
+// Pineapple — orchestrator. A video-calling app first; games overlay the call.
 //
 // Screens: auth -> home -> call. Games run inside the call as an overlay the
 // host can start and anyone can dismiss. Seats: 0 = call host (or solo
@@ -13,6 +13,7 @@ import { parseCard, SUIT_GLYPH, SUIT_IS_RED, rankLabel, cardValue } from './game
 import { chooseAiPlay } from './game/ai.js';
 import { Party } from './net/peer.js';
 import { HandInput } from './gestures/hands.js';
+import { AvatarSystem } from './avatars.js';
 import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest, authErrorMessage } from './auth/auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,7 +24,8 @@ const els = [
   'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
   'btnMute', 'btnCam', 'btnSwap', 'btnGames', 'btnHangup',
   'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
-  'gameLayer', 'btnLeaveGame', 'btnControls', 'oppBar', 'pileLabel', 'pileCards', 'turnBanner', 'handArea',
+  'gameLayer', 'btnLeaveGame', 'btnControls', 'btnTableMode', 'tableLayer',
+  'oppBar', 'pileLabel', 'pileCards', 'turnBanner', 'handArea',
   'btnSort', 'btnPlay', 'btnPass', 'passRing', 'gameOver', 'gameOverText', 'btnRematch', 'btnEndGame',
   'toast', 'cursor',
 ].reduce((m, id) => (m[id] = $(id), m), {});
@@ -37,6 +39,8 @@ const AI_DELAY_MS = [800, 1600];
 const MAX_HUMANS = 4;
 
 const hands = new HandInput();
+const avatars = new AvatarSystem();
+window.__pineapple = { avatars }; // debug handle
 let currentUser = null;    // {name, email, isGuest}
 let party = null;          // Party instance, one per call
 let engine = null;         // host/solo only
@@ -163,6 +167,7 @@ function newParty() {
     }
     v.srcObject = stream;
     layout();
+    if (tableMode) buildTableSpots(); // a feed just became available for an avatar
   };
 
   party.onPeerJoin = (peerId) => {
@@ -187,6 +192,7 @@ function newParty() {
       // A seated human dropped mid-round: an AI takes over their hand.
       seats[seat] = { isAI: true, name: `${name} (AI)`, peerId: null };
       showToast(`${name} left — AI plays their hand`, 3500);
+      if (tableMode) buildTableSpots();
       if (iAmAuthority) { broadcastSeats(); broadcast(); }
     } else {
       showToast(`${name} left the call`, 2500);
@@ -217,6 +223,7 @@ function newParty() {
   party.on('state', (snap) => applyState(snap));
   party.on('reject', (reason) => showToast(reason));
   party.on('game-end', () => hideGame());
+  party.on('table', ({ on }) => setTableMode(on, true));
 
   party.on('intent', ({ action, cards }, fromPeer) => {
     if (!iAmAuthority) return;
@@ -350,7 +357,23 @@ els.btnSwap.onclick = () => {
   layout();
 };
 
+function feltEl() {
+  const bg = document.createElement('div');
+  bg.className = 'table-bg';
+  bg.textContent = '🂡';
+  return bg;
+}
+
 function layout() {
+  if (tableMode && gameActive) {
+    // Table mode: the whole screen is the felt; avatars replace video views.
+    els.videoGrid.replaceChildren(feltEl());
+    els.videoGrid.dataset.count = 0;
+    els.tileStrip.replaceChildren();
+    show(els.tileStrip, false);
+    show(els.btnSwap, false);
+    return;
+  }
   const remotes = [...remoteVideos.values()];
   const haveCam = !!localStream;
   // During a game your own feed is the table; in a plain call your partner is.
@@ -363,15 +386,89 @@ function layout() {
     els.videoGrid.replaceChildren(...main);
     els.videoGrid.dataset.count = main.length;
   } else {
-    const bg = document.createElement('div');
-    bg.className = 'table-bg';
-    bg.textContent = '🂡';
-    els.videoGrid.replaceChildren(bg);
+    els.videoGrid.replaceChildren(feltEl());
     els.videoGrid.dataset.count = 0;
   }
   els.tileStrip.replaceChildren(...tiles);
   show(els.tileStrip, tiles.length > 0);
   show(els.btnSwap, haveCam && remotes.length > 0);
+}
+
+// ---------------------------------------------------------------- table mode
+//
+// Host-synced: the whole screen becomes the felt table and players appear as
+// avatars seated around it — humans as background-removed video cutouts,
+// bots as generic animated feeds. Positions are relative to YOUR seat: you
+// always sit at the bottom.
+
+let tableMode = false;
+
+const SELF_POS = { x: '12%', y: '74%' };
+const SPOT_POS = {
+  2: [{ x: '50%', y: '30%' }],
+  3: [{ x: '24%', y: '32%' }, { x: '76%', y: '32%' }],
+  4: [{ x: '16%', y: '44%' }, { x: '50%', y: '24%' }, { x: '84%', y: '44%' }],
+};
+
+els.btnTableMode.onclick = () => {
+  if (!iAmAuthority) return;
+  setTableMode(!tableMode);
+};
+
+function setTableMode(on, fromRemote = false) {
+  if (tableMode === on) return;
+  tableMode = on;
+  els.btnTableMode.classList.toggle('on', on);
+  els.callScreen.classList.toggle('table-on', on);
+  show(els.tableLayer, on);
+  layout();
+  if (on) { buildTableSpots(); avatars.start(); }
+  else { avatars.stop(); els.tableLayer.replaceChildren(); }
+  if (!fromRemote && !DEMO) party?.send('table', { on });
+}
+
+function buildTableSpots() {
+  els.tableLayer.replaceChildren();
+  const n = seats.length;
+  if (!SPOT_POS[n]) return;
+  const entries = [];
+  for (let i = 0; i < n; i++) {
+    const rel = (i - mySeat + n) % n;
+    const spot = document.createElement('div');
+    spot.className = 'player-spot' + (rel === 0 ? ' self' : '');
+    spot.dataset.seat = i;
+    const pos = rel === 0 ? SELF_POS : SPOT_POS[n][rel - 1];
+    spot.style.setProperty('--x', pos.x);
+    spot.style.setProperty('--y', pos.y);
+    const canvas = document.createElement('canvas');
+    const label = document.createElement('div');
+    label.className = 'spot-label';
+    spot.append(canvas, label);
+    els.tableLayer.appendChild(spot);
+    const s = seats[i];
+    const video = i === mySeat
+      ? (localStream ? els.localVideo : null)
+      : (s.peerId ? remoteVideos.get(s.peerId) : null);
+    entries.push({
+      canvas,
+      kind: s.isAI ? 'bot' : video ? 'video' : 'initial',
+      video,
+      mirror: i === mySeat,
+      hue: (i * 77 + 20) % 360,
+      label: s.name,
+    });
+  }
+  avatars.setEntries(entries);
+  if (state) updateTableSpots(state);
+}
+
+function updateTableSpots(snap) {
+  for (const spot of els.tableLayer.children) {
+    const i = Number(spot.dataset.seat);
+    spot.classList.toggle('turn', snap.turn === i && snap.winner < 0);
+    const label = spot.querySelector('.spot-label');
+    if (label) label.innerHTML = `${seatName(i)} · <span class="cnt">${snap.counts[i]}</span>`;
+  }
 }
 
 // ================================================================ game lifecycle
@@ -432,7 +529,7 @@ function broadcastSeats() {
 // only, no tracking at all. Phones/tablets default to touch (holding a phone
 // and gesturing at it rarely works); desktops default to gestures.
 
-const CONTROLS_KEY = 'pusoy-duo-controls';
+const CONTROLS_KEY = 'pineapple-controls';
 let controlMode = localStorage.getItem(CONTROLS_KEY)
   || (matchMedia('(pointer: coarse)').matches ? 'touch' : 'gesture');
 
@@ -458,12 +555,14 @@ async function showGame() {
   show(els.gameLayer, true);
   els.callScreen.classList.add('gaming');
   show(els.btnControls, !!localStream); // no camera -> nothing to toggle
+  show(els.btnTableMode, iAmAuthority);
   renderControlsBtn();
   layout();
   if (controlMode === 'gesture') await startGestures();
 }
 
 function hideGame() {
+  setTableMode(false, true); // each side ends table mode with its own game
   gameActive = false;
   clearTimeout(aiTimer);
   engine = null;
@@ -630,6 +729,7 @@ function applyState(snap) {
   const yourTurn = snap.turn === snap.you && snap.winner < 0;
   els.turnBanner.textContent = snap.winner >= 0 ? '' : yourTurn ? 'Your turn' : `${seatName(snap.turn)}'s turn…`;
   els.turnBanner.classList.toggle('yours', yourTurn);
+  if (tableMode) updateTableSpots(snap);
   refreshHand();
 
   if (snap.winner >= 0) {

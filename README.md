@@ -1,4 +1,4 @@
-# Pusoy Duo ♥
+# Pineapple 🍍
 
 A **video-calling web app** for couples and friends, with games built in.
 Sign in (or play as a guest), start a peer-to-peer video call, and deal a game
@@ -29,6 +29,11 @@ and the internet, host on HTTPS (GitHub Pages works as-is).
    the call. ✕ or "Back to the call" ends the game for everyone; the call
    continues. People can join the call mid-game — they spectate until the next
    deal.
+4. **Table Mode** (🎴, host toggle, synced to everyone) — the whole screen
+   becomes the felt table with players seated around it as avatars: humans are
+   their live video feeds with the background removed (MediaPipe selfie
+   segmentation, fully client-side), bots get a generic animated feed. You
+   always sit at the bottom; the green ring marks whose turn it is.
 
 `?demo` = 2-player hotseat, no camera/network/auth (testing).
 
@@ -81,6 +86,7 @@ src/game/combos.js            combination classification + comparison
 src/game/engine.js            host-authoritative turn engine (2-4 players)
 src/game/ai.js                bot player (runs on the host)
 src/net/peer.js               PeerJS party: star data topology + video mesh
+src/avatars.js                table-mode avatars: segmentation cutouts + bot feeds
 src/gestures/hands.js         MediaPipe hand tracking -> cursor/pinch/fist events
 ```
 
