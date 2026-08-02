@@ -1,0 +1,10 @@
+// Cloudflare Workers config: serve this repo as a static-assets-only site.
+// Used by the git-integrated deploy (`npx wrangler deploy`).
+{
+  "name": "kritzzz",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "single-page-application"
+  }
+}
