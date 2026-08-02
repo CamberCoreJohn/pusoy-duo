@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Pusoy Duo — video calls with games</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <!-- Auth -->
+  <div id="authScreen" class="screen center-screen">
+    <h1>Pusoy&nbsp;Duo <span class="heart">♥</span></h1>
+    <p class="tagline">Video calls with games built in.</p>
+    <div class="panel">
+      <div id="authTabs" class="seg wide hidden">
+        <button data-tab="signin" class="on">Sign in</button>
+        <button data-tab="register">Register</button>
+      </div>
+      <input id="authName" placeholder="Your name" autocomplete="name" class="hidden" />
+      <input id="authEmail" type="email" placeholder="Email" autocomplete="email" class="hidden" />
+      <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" class="hidden" />
+      <button id="btnAuthSubmit" class="big hidden">Sign in</button>
+      <div id="authError" class="status err"></div>
+      <div class="or" id="authOr">— play without an account —</div>
+      <input id="guestName" placeholder="Your name" maxlength="20" autocomplete="off" />
+      <button id="btnGuest" class="big solo">Continue as guest</button>
+      <div id="authNote" class="hint"></div>
+    </div>
+  </div>
+
+  <!-- Home -->
+  <div id="homeScreen" class="screen center-screen hidden">
+    <h1>Pusoy&nbsp;Duo <span class="heart">♥</span></h1>
+    <p class="tagline" id="greeting"></p>
+    <div class="panel">
+      <button id="btnCall" class="big">📞 Start a call</button>
+      <div class="join-row">
+        <input id="joinCode" maxlength="5" placeholder="CODE" autocomplete="off" />
+        <button id="btnJoin" class="big">Join</button>
+      </div>
+      <div class="or">—</div>
+      <button id="btnPractice" class="big solo">🎮 Practice vs AI</button>
+      <div id="homeStatus" class="status"></div>
+    </div>
+    <button id="btnSignOut" class="linkish">Sign out</button>
+  </div>
+
+  <!-- Call -->
+  <div id="callScreen" class="screen hidden">
+    <div id="videoGrid" class="video-grid" data-count="0">
+      <video id="localVideo" class="mirror" autoplay playsinline muted></video>
+    </div>
+    <div id="tileStrip" class="tile-strip hidden"></div>
+
+    <div id="codeBanner" class="code-banner hidden">
+      <span>Code <b id="callCode"></b></span>
+      <button id="btnCopyCode" title="Copy">⧉</button>
+      <span id="rosterInfo"></span>
+    </div>
+
+    <div class="call-controls">
+      <button id="btnMute" title="Mute">🎤</button>
+      <button id="btnCam" title="Camera off">📷</button>
+      <button id="btnSwap" class="hidden" title="Swap main view">🔁</button>
+      <button id="btnGames" title="Play a game">🎮</button>
+      <button id="btnHangup" class="danger" title="Leave call">📞</button>
+    </div>
+
+    <!-- Game picker -->
+    <div id="gamePicker" class="modal hidden">
+      <div class="panel">
+        <h2>Pusoy Dos</h2>
+        <div class="size-row">
+          Table size
+          <div class="seg" id="sizeSeg">
+            <button data-size="2" class="on">2</button>
+            <button data-size="3">3</button>
+            <button data-size="4">4</button>
+          </div>
+        </div>
+        <div class="hint" id="pickerHint"></div>
+        <button id="btnStartGame" class="big">Deal the cards</button>
+        <button id="btnPickerCancel" class="linkish">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Game overlay -->
+    <div id="gameLayer" class="hidden">
+      <button id="btnLeaveGame" class="leave-game" title="Back to the call">✕</button>
+      <div id="oppBar" class="opp-bar"></div>
+      <div id="pileArea" class="pile-area">
+        <div id="pileLabel" class="pile-label"></div>
+        <div id="pileCards" class="pile-cards"></div>
+      </div>
+      <div id="turnBanner" class="turn-banner"></div>
+      <div id="handArea" class="hand-area"></div>
+      <div class="actions">
+        <button id="btnSort" class="action sort">SORT: RANK</button>
+        <button id="btnPlay" class="action play" disabled>PLAY</button>
+        <button id="btnPass" class="action pass" disabled>
+          PASS <span id="passRing" class="pass-ring"></span>
+        </button>
+      </div>
+      <div id="gameOver" class="game-over hidden">
+        <div class="game-over-box">
+          <div id="gameOverText"></div>
+          <button id="btnRematch" class="big">Rematch</button>
+          <button id="btnEndGame" class="linkish">Back to the call</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <div id="cursor" class="cursor hidden"><div class="cursor-dot"></div></div>
+  </div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
