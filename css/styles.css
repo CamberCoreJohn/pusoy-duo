@@ -52,7 +52,15 @@ input { -webkit-user-select: text; user-select: text; font-family: inherit; }
 }
 #introCanvas { filter: drop-shadow(0 18px 44px rgba(0, 0, 0, 0.55)); }
 .intro-wm { font-size: clamp(1.6rem, 6vw, 2.2rem); }
-.intro-hint { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.04em; }
+.dedication {
+  color: var(--muted); font-size: 0.85rem; font-weight: 300; letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.dedication::first-letter { letter-spacing: 0.14em; }
+.auth-dedication {
+  position: absolute; bottom: calc(16px + var(--sab)); left: 50%; transform: translateX(-50%);
+  white-space: nowrap;
+}
 
 /* ---------- shared ---------- */
 .center-screen {

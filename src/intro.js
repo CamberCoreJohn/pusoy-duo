@@ -3,8 +3,8 @@
 // A serpentine scribble path progressively unmasks the pencil-sketch version
 // (assets/intro-sketch.png), a pencil rides the stroke tip, then the color
 // cutout (assets/intro.png) crossfades in and the overlay dissolves.
-// Tap/click skips. If assets fail or anything stalls, a failsafe dismisses
-// the overlay so the app is never blocked.
+// Not skippable by design; if assets fail or anything stalls, a failsafe
+// still dismisses the overlay so the app is never blocked.
 
 const DRAW_MS = 2600;
 const COLOR_MS = 900;
@@ -26,9 +26,7 @@ export function runIntro(onDone) {
     screen.style.opacity = '0';
     setTimeout(() => { screen.remove(); onDone?.(); }, 470);
   };
-  screen.addEventListener('click', finish);
   const failsafe = setTimeout(finish, FAILSAFE_MS);
-  if (window.__kritzzz) window.__kritzzz.skipIntro = finish;
 
   const load = (src) => new Promise((res, rej) => {
     const i = new Image();
