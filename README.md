@@ -1,4 +1,4 @@
-# Pineapple 🍍
+# Kritzzz
 
 A **video-calling web app** for couples and friends, with games built in.
 Sign in (or play as a guest), start a peer-to-peer video call, and deal a game

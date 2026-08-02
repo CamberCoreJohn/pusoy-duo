@@ -1,4 +1,4 @@
-// Pineapple — orchestrator. A video-calling app first; games overlay the call.
+// Kritzzz — orchestrator. A video-calling app first; games overlay the call.
 //
 // Screens: auth -> home -> call. Games run inside the call as an overlay the
 // host can start and anyone can dismiss. Seats: 0 = call host (or solo
@@ -40,7 +40,7 @@ const MAX_HUMANS = 4;
 
 const hands = new HandInput();
 const avatars = new AvatarSystem();
-window.__pineapple = { avatars }; // debug handle
+window.__kritzzz = { avatars }; // debug handle
 let currentUser = null;    // {name, email, isGuest}
 let party = null;          // Party instance, one per call
 let engine = null;         // host/solo only
@@ -545,7 +545,7 @@ function broadcastSeats() {
 // only, no tracking at all. Phones/tablets default to touch (holding a phone
 // and gesturing at it rarely works); desktops default to gestures.
 
-const CONTROLS_KEY = 'pineapple-controls';
+const CONTROLS_KEY = 'kritzzz-controls';
 let controlMode = localStorage.getItem(CONTROLS_KEY)
   || (matchMedia('(pointer: coarse)').matches ? 'touch' : 'gesture');
 
