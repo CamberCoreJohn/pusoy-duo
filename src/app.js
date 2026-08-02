@@ -16,6 +16,7 @@ import { HandInput } from './gestures/hands.js';
 import { AvatarSystem } from './avatars.js';
 import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest, authErrorMessage, signInWithGoogle } from './auth/auth.js';
 import { initSocial, stopSocial, myCode, addFriendByCode, respondRequest, sendInvite, answerInvite } from './social/friends.js';
+import { runIntro } from './intro.js';
 
 const $ = (id) => document.getElementById(id);
 const els = [
@@ -1004,5 +1005,12 @@ if (DEMO) {
   startRound();
 } else {
   renderAuthScreen();
+  // pencil-drawing intro, once per browser session; auth boots underneath it
+  if (!sessionStorage.getItem('kritzzz-intro')) {
+    sessionStorage.setItem('kritzzz-intro', '1');
+    runIntro();
+  } else {
+    document.getElementById('introScreen')?.remove();
+  }
   initAuth(onUser);
 }

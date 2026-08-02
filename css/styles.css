@@ -44,6 +44,16 @@ input { -webkit-user-select: text; user-select: text; font-family: inherit; }
     radial-gradient(520px 400px at 72% 80%, rgba(34, 211, 238, 0.10), transparent 65%);
 }
 
+/* ---------- intro ---------- */
+.intro {
+  z-index: 100; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 24px;
+}
+#introCanvas { filter: drop-shadow(0 18px 44px rgba(0, 0, 0, 0.55)); }
+.intro-wm { font-size: clamp(1.6rem, 6vw, 2.2rem); }
+.intro-hint { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.04em; }
+
 /* ---------- shared ---------- */
 .center-screen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;

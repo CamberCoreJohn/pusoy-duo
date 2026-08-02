@@ -15,6 +15,13 @@
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
+  <!-- First-visit intro: pencil-drawing loading screen -->
+  <div id="introScreen" class="screen intro hidden">
+    <canvas id="introCanvas"></canvas>
+    <div class="wordmark intro-wm">Kritzzz</div>
+    <div class="intro-hint">tap to skip</div>
+  </div>
+
   <!-- Auth -->
   <div id="authScreen" class="screen center-screen">
     <h1 class="wordmark">Kritzzz</h1>
