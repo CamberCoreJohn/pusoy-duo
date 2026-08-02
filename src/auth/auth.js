@@ -52,10 +52,23 @@ export async function initAuth(onUser) {
 export async function signInWithGoogle() {
   if (!fb) throw new Error('Sign-in is not set up on this install');
   const provider = new fb.api.GoogleAuthProvider();
-  // Popups are unreliable on mobile Safari; redirect there, popup elsewhere.
-  const mobile = /iP(hone|ad|od)|Android/i.test(navigator.userAgent);
-  if (mobile) await fb.api.signInWithRedirect(fb.auth, provider);
-  else await fb.api.signInWithPopup(fb.auth, provider);
+  // Popup first, on every platform. Safari's tracking prevention breaks the
+  // redirect flow (the result is stored under the firebaseapp.com authDomain,
+  // which Safari partitions as third-party storage), so on iPhone/iPad the
+  // redirect came back signed-out. A popup opened directly from the tap is
+  // allowed and completes in-window. Redirect remains only as a fallback for
+  // environments that cannot open popups at all (e.g. some installed PWAs).
+  try {
+    await fb.api.signInWithPopup(fb.auth, provider);
+  } catch (e) {
+    const c = e?.code || '';
+    const popupImpossible =
+      c.includes('popup-blocked') ||
+      c.includes('operation-not-supported-in-this-environment') ||
+      c.includes('web-storage-unsupported');
+    if (popupImpossible) await fb.api.signInWithRedirect(fb.auth, provider);
+    else throw e; // user closed it / real error: surface, don't redirect-loop
+  }
 }
 
 export async function register(name, email, password) {
