@@ -93,6 +93,7 @@ export class PusoyEngine {
       lowestInPlay: this.lowestInPlay,
       winner: this.winner,
       lastLog: this.log[this.log.length - 1] || null,
+      logN: this.log.length,
     };
   }
 }

@@ -17,6 +17,7 @@ import { AvatarSystem } from './avatars.js';
 import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest, authErrorMessage, signInWithGoogle } from './auth/auth.js';
 import { initSocial, stopSocial, myCode, addFriendByCode, respondRequest, sendInvite, answerInvite } from './social/friends.js';
 import { runIntro } from './intro.js';
+import { flyCards, passBubble, swooshPile, shakeTable, rainbowSweep, confettiBurst, confettiRain } from './fx.js';
 
 const $ = (id) => document.getElementById(id);
 const els = [
@@ -756,6 +757,8 @@ function hideGame() {
   show(els.gameLayer, false);
   show(els.gameOver, false);
   lastPileKey = '';
+  lastLogN = 0;
+  winnerCelebrated = false;
   els.callScreen.classList.remove('gaming');
   show(els.cursor, false);
   layout();
@@ -783,6 +786,8 @@ function startRound() {
   engine = new PusoyEngine({ players: seats.length });
   selected.clear();
   lastPileKey = ''; // first play of the round should animate
+  lastLogN = 0;
+  winnerCelebrated = false;
   broadcast();
 }
 
@@ -897,12 +902,22 @@ function toggleCard(id) {
 // The pile signature tells a fresh play apart from a mere re-render, so the
 // landing animations only fire when cards were actually just put down.
 let lastPileKey = '';
+let lastLogN = 0;
+let winnerCelebrated = false;
 
 function spawnSunrays() {
+  if (!gameActive) return;
   const rays = document.createElement('div');
   rays.className = 'sunrays';
   els.pileCards.appendChild(rays);
   setTimeout(() => rays.remove(), 1900);
+}
+
+/** Screen anchor for a seat: their spot's card stack, or your hand fan. */
+function seatRect(seat) {
+  if (seat === (state?.you ?? mySeat)) return els.handArea.getBoundingClientRect();
+  const spot = els.tableLayer.querySelector(`.player-spot[data-seat="${seat}"]`);
+  return (spot?.querySelector('.mini-cards') || spot)?.getBoundingClientRect() || null;
 }
 
 function applyState(snap) {
@@ -915,7 +930,19 @@ function applyState(snap) {
     ? snap.pile.cards.map((c) => c.id).join(',') + '@' + snap.pileOwner
     : '';
   const isNewPlay = !!pileKey && pileKey !== lastPileKey;
+
+  // trick conceded: the dead pile swooshes off toward whoever leads next
+  if (!pileKey && lastPileKey && snap.winner < 0) {
+    swooshPile([...els.pileCards.children], seatRect(snap.turn));
+  }
   lastPileKey = pileKey;
+
+  // someone passed since the last snapshot: float a bubble off their spot
+  if (snap.logN !== lastLogN && snap.lastLog?.type === 'pass') {
+    const r = seatRect(snap.lastLog.player);
+    if (r) passBubble(r);
+  }
+  lastLogN = snap.logN;
 
   els.oppBar.replaceChildren(...snap.counts.flatMap((count, i) => {
     if (i === snap.you) return [];
@@ -925,20 +952,39 @@ function applyState(snap) {
     return [chip];
   }));
 
-  els.pileCards.replaceChildren(...(snap.pile ? snap.pile.cards.map((c, i) => {
+  els.pileCards.replaceChildren(...(snap.pile ? snap.pile.cards.map((c) => {
     const el = cardEl(c);
-    if (isNewPlay) {
-      el.classList.add('land');
-      el.style.animationDelay = i * 50 + 'ms';
-      if (c.id === '2D') el.classList.add('golden'); // the boss card
-    }
+    if (isNewPlay && c.id === '2D') el.classList.add('golden'); // the boss card
     return el;
   }) : []));
   if (isNewPlay) {
+    // cards fly in from the owner's stack (face-down for opponents) —
+    // fall back to the drop-from-above land if we have no source anchor
+    const src = seatRect(snap.pileOwner);
+    const pileEls = [...els.pileCards.children];
+    let flightMs = 0;
+    if (src) {
+      flightMs = flyCards(src, pileEls, { faceDown: snap.pileOwner !== snap.you });
+    } else {
+      pileEls.forEach((el, i) => { el.classList.add('land'); el.style.animationDelay = i * 50 + 'ms'; });
+      flightMs = 400;
+    }
+    // impact + celebrations, timed to the last card's arrival
     els.pileCards.classList.remove('thump', 'thump-big');
     void els.pileCards.offsetWidth; // restart the animation
+    els.pileCards.style.animationDelay = Math.max(0, flightMs - 90) + 'ms';
     els.pileCards.classList.add(snap.pile.cards.length >= 5 ? 'thump-big' : 'thump');
-    if (snap.pile.cards.some((c) => c.id === '2D')) spawnSunrays();
+    const combo = snap.pile.name;
+    setTimeout(() => {
+      if (!gameActive) return;
+      if (snap.pile.cards.some((c) => c.id === '2D')) spawnSunrays();
+      if (combo === 'Four of a Kind') shakeTable(els.gameLayer);
+      if (combo === 'Straight Flush') {
+        rainbowSweep(els.pileCards);
+        const r = els.pileCards.getBoundingClientRect();
+        confettiBurst(r.left + r.width / 2, r.top + r.height / 2, 40);
+      }
+    }, flightMs);
   }
   els.pileLabel.textContent = snap.pile
     ? `${snap.pile.name} — ${snap.pileOwner === snap.you ? 'yours' : seatName(snap.pileOwner)}`
@@ -952,8 +998,10 @@ function applyState(snap) {
 
   if (snap.winner >= 0) {
     els.gameOverText.textContent = snap.winner === snap.you ? 'You win! 🎉' : `${seatName(snap.winner)} wins! 💖`;
+    if (!winnerCelebrated) { winnerCelebrated = true; confettiRain(); }
     show(els.gameOver, true);
   } else {
+    winnerCelebrated = false;
     show(els.gameOver, false);
   }
 }

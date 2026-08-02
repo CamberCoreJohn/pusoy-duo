@@ -323,6 +323,65 @@ button.linkish:hover { color: var(--text); }
 }
 .pile-cards .card.land { animation: cardLand 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
 
+/* flight from the owner's stack: real pile card hides until its flyer lands */
+.pile-cards .card.await-flight { opacity: 0; }
+.fly-card { position: fixed; margin: 0; z-index: 45; pointer-events: none; }
+@keyframes landPop {
+  0%   { transform: scale(1.18); }
+  55%  { transform: scale(0.96); }
+  100% { transform: none; }
+}
+.pile-cards .card.land-pop { animation: landPop 0.22s ease-out both; }
+
+.pass-bubble {
+  position: fixed; z-index: 46; pointer-events: none; transform: translate(-50%, -50%);
+  background: var(--glass); border: 1px solid var(--stroke); border-radius: 999px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  padding: 7px 16px; font-weight: 800; font-size: 0.95rem; letter-spacing: 0.06em;
+  animation: bubbleUp 1.25s ease-out both;
+}
+@keyframes bubbleUp {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  18%  { opacity: 1; transform: translate(-50%, -70%) scale(1.05); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -180%) scale(0.95); }
+}
+
+/* four of a kind: earthquake */
+@keyframes quake {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-7px, 4px) rotate(-0.5deg); }
+  30% { transform: translate(6px, -5px) rotate(0.4deg); }
+  45% { transform: translate(-5px, -3px) rotate(-0.3deg); }
+  60% { transform: translate(4px, 4px) rotate(0.3deg); }
+  75% { transform: translate(-3px, 2px); }
+  90% { transform: translate(2px, -1px); }
+}
+#gameLayer.quake { animation: quake 0.65s ease-out; }
+
+/* straight flush: rainbow shimmer sweeping across the pile */
+.rainbow-sweep {
+  position: absolute; inset: -18px; z-index: 3; pointer-events: none;
+  border-radius: 14px; mix-blend-mode: screen;
+  background: linear-gradient(105deg,
+    transparent 15%, rgba(255, 80, 80, 0.55) 30%, rgba(255, 214, 110, 0.55) 40%,
+    rgba(90, 255, 140, 0.55) 50%, rgba(90, 190, 255, 0.55) 60%,
+    rgba(190, 120, 255, 0.55) 70%, transparent 85%);
+  background-size: 320% 100%;
+  animation: rainbowSweep 1.4s ease-in-out both;
+}
+@keyframes rainbowSweep {
+  0%   { background-position: 110% 0; opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { background-position: -60% 0; opacity: 0; }
+}
+
+.confetti {
+  position: fixed; z-index: 55; pointer-events: none;
+  width: 9px; height: 13px; transform-origin: center;
+}
+
 /* the table shudders under the impact — heavier for 5-card hands */
 @keyframes thump {
   0%, 100% { transform: none; }
@@ -354,11 +413,16 @@ button.linkish:hover { color: var(--text); }
   22%  { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2) rotate(38deg); }
 }
-@keyframes goldenPulse {
-  0%, 100% { box-shadow: 0 0 0 2px #ffd778, 0 0 22px rgba(255, 199, 88, 0.75), 0 3px 12px rgba(0, 0, 0, 0.5); }
-  50%      { box-shadow: 0 0 0 3px #ffe4a3, 0 0 40px rgba(255, 214, 110, 0.95), 0 3px 12px rgba(0, 0, 0, 0.5); }
+/* pulse lives on ::after so it never fights the land/flight animations */
+.pile-cards .card.golden {
+  box-shadow: 0 0 0 2px #ffd778, 0 0 24px rgba(255, 199, 88, 0.8), 0 3px 12px rgba(0, 0, 0, 0.5);
 }
-.pile-cards .card.golden { animation: cardLand 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both, goldenPulse 1.4s ease-in-out 0.4s 2; }
+.pile-cards .card.golden::after {
+  content: ''; position: absolute; inset: -7px; border-radius: 13px; pointer-events: none;
+  box-shadow: 0 0 38px rgba(255, 214, 110, 0.95);
+  opacity: 0; animation: goldenPulse 1.2s ease-in-out 0.45s 3;
+}
+@keyframes goldenPulse { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 
 .card {
   width: var(--card-w); height: var(--card-h);
