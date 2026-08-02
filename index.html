@@ -56,6 +56,9 @@
       <video id="localVideo" class="mirror" autoplay playsinline muted></video>
     </div>
     <div id="tileStrip" class="tile-strip hidden"></div>
+    <!-- Keeps video elements attached & playing while Table Mode hides them:
+         detached videos stop decoding (iOS pauses them), which broke avatars -->
+    <div id="videoPark" class="video-park"></div>
 
     <div id="codeBanner" class="code-banner hidden">
       <span>Code <b id="callCode"></b></span>

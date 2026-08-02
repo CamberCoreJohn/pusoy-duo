@@ -21,7 +21,7 @@ const els = [
   'authScreen', 'authTabs', 'authName', 'authEmail', 'authPassword', 'btnAuthSubmit',
   'authError', 'authOr', 'guestName', 'btnGuest', 'authNote',
   'homeScreen', 'greeting', 'btnCall', 'btnJoin', 'joinCode', 'btnPractice', 'homeStatus', 'btnSignOut',
-  'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
+  'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'videoPark', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
   'btnMute', 'btnCam', 'btnSwap', 'btnGames', 'btnHangup',
   'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
   'gameLayer', 'btnLeaveGame', 'btnControls', 'btnTableMode', 'tableLayer',
@@ -364,11 +364,24 @@ function feltEl() {
   return bg;
 }
 
+function allVideos() {
+  return [els.localVideo, ...remoteVideos.values()];
+}
+
+// Re-parenting can pause media on iOS Safari; nudge everything back to playing.
+function keepPlaying() {
+  for (const v of allVideos()) if (v.srcObject) v.play?.().catch(() => {});
+}
+
 function layout() {
   if (tableMode && gameActive) {
     // Table mode: the whole screen is the felt; avatars replace video views.
+    // Videos move to the hidden park (NOT out of the DOM) so they keep
+    // decoding — the avatar cutouts sample frames from them.
     els.videoGrid.replaceChildren(feltEl());
     els.videoGrid.dataset.count = 0;
+    els.videoPark.replaceChildren(...allVideos());
+    keepPlaying();
     els.tileStrip.replaceChildren();
     show(els.tileStrip, false);
     show(els.btnSwap, false);
@@ -392,6 +405,7 @@ function layout() {
   els.tileStrip.replaceChildren(...tiles);
   show(els.tileStrip, tiles.length > 0);
   show(els.btnSwap, haveCam && remotes.length > 0);
+  keepPlaying();
 }
 
 // ---------------------------------------------------------------- table mode
@@ -403,7 +417,7 @@ function layout() {
 
 let tableMode = false;
 
-const SELF_POS = { x: '12%', y: '74%' };
+// Self spot is positioned by CSS (centered above the turn banner).
 const SPOT_POS = {
   2: [{ x: '50%', y: '30%' }],
   3: [{ x: '24%', y: '32%' }, { x: '76%', y: '32%' }],
@@ -437,9 +451,11 @@ function buildTableSpots() {
     const spot = document.createElement('div');
     spot.className = 'player-spot' + (rel === 0 ? ' self' : '');
     spot.dataset.seat = i;
-    const pos = rel === 0 ? SELF_POS : SPOT_POS[n][rel - 1];
-    spot.style.setProperty('--x', pos.x);
-    spot.style.setProperty('--y', pos.y);
+    if (rel > 0) {
+      const pos = SPOT_POS[n][rel - 1];
+      spot.style.setProperty('--x', pos.x);
+      spot.style.setProperty('--y', pos.y);
+    }
     const canvas = document.createElement('canvas');
     const label = document.createElement('div');
     label.className = 'spot-label';

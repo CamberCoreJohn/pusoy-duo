@@ -130,6 +130,11 @@ button.linkish {
 .table-toggle.on { background: rgba(34,197,94,0.65); }
 
 /* ---------- table mode ---------- */
+.video-park {
+  position: absolute; bottom: 0; right: 0; width: 4px; height: 4px;
+  overflow: hidden; opacity: 0.01; pointer-events: none; z-index: 0;
+}
+.video-park video { width: 4px; height: 4px; }
 .table-layer { position: absolute; inset: 0; z-index: 1; }
 .table-on .opp-bar, .table-on .tile-strip { display: none; }
 .player-spot {
@@ -140,6 +145,11 @@ button.linkish {
   width: clamp(84px, 13vw, 150px); aspect-ratio: 1; border-radius: 50%;
   background: rgba(0,0,0,0.3); border: 3px solid rgba(255,255,255,0.22);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.player-spot.self {
+  /* centered directly above the "Your turn" banner */
+  left: 50%; top: auto; bottom: calc(292px + var(--sab));
+  transform: translateX(-50%);
 }
 .player-spot.self canvas { width: clamp(60px, 8vw, 96px); }
 .player-spot.turn canvas {
@@ -266,6 +276,8 @@ button.action:disabled { opacity: 0.35; cursor: default; }
   .call-controls button { width: 48px; height: 48px; }
   .pile-area { transform: translate(-50%, -80%); }
   .turn-banner { bottom: auto; top: calc(64px + var(--sat)); }
+  /* banner is at the top on phones; keep the self avatar above the hand fan */
+  .player-spot.self { bottom: calc(225px + var(--sab)); }
   .opp-bar { top: calc(14px + var(--sat)); max-width: 92vw; }
   .tile-strip video { width: clamp(84px, 24vw, 130px); }
 }
