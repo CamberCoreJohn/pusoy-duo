@@ -23,7 +23,7 @@ const els = [
   'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
   'btnMute', 'btnCam', 'btnSwap', 'btnGames', 'btnHangup',
   'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
-  'gameLayer', 'btnLeaveGame', 'oppBar', 'pileLabel', 'pileCards', 'turnBanner', 'handArea',
+  'gameLayer', 'btnLeaveGame', 'btnControls', 'oppBar', 'pileLabel', 'pileCards', 'turnBanner', 'handArea',
   'btnSort', 'btnPlay', 'btnPass', 'passRing', 'gameOver', 'gameOverText', 'btnRematch', 'btnEndGame',
   'toast', 'cursor',
 ].reduce((m, id) => (m[id] = $(id), m), {});
@@ -426,12 +426,41 @@ function broadcastSeats() {
   }
 }
 
+// ---------------------------------------------------------------- control mode
+//
+// 'gesture' = MediaPipe hand tracking drives a cursor; 'touch' = tap/click
+// only, no tracking at all. Phones/tablets default to touch (holding a phone
+// and gesturing at it rarely works); desktops default to gestures.
+
+const CONTROLS_KEY = 'pusoy-duo-controls';
+let controlMode = localStorage.getItem(CONTROLS_KEY)
+  || (matchMedia('(pointer: coarse)').matches ? 'touch' : 'gesture');
+
+function renderControlsBtn() {
+  const gesture = controlMode === 'gesture';
+  els.btnControls.textContent = gesture ? '🖐️' : '👆';
+  els.btnControls.classList.toggle('touch-on', !gesture);
+  els.btnControls.title = gesture
+    ? 'Hand gestures on — tap for touch controls'
+    : 'Touch controls — tap for hand gestures';
+}
+
+els.btnControls.onclick = () => {
+  controlMode = controlMode === 'gesture' ? 'touch' : 'gesture';
+  localStorage.setItem(CONTROLS_KEY, controlMode);
+  renderControlsBtn();
+  showToast(controlMode === 'gesture' ? 'Hand gestures on 🖐️' : 'Touch controls 👆', 1500);
+  if (controlMode === 'gesture') startGestures();
+};
+
 async function showGame() {
   gameActive = true;
   show(els.gameLayer, true);
   els.callScreen.classList.add('gaming');
+  show(els.btnControls, !!localStream); // no camera -> nothing to toggle
+  renderControlsBtn();
   layout();
-  await startGestures();
+  if (controlMode === 'gesture') await startGestures();
 }
 
 function hideGame() {
@@ -647,9 +676,11 @@ function showToast(msg, ms = 2200) {
 let hoverEl = null;
 
 function loop(nowMs) {
-  if (!gameActive) {
-    // Plain call: skip hand tracking entirely (saves battery on phones).
+  if (!gameActive || controlMode !== 'gesture') {
+    // Plain call or touch mode: skip hand tracking entirely (battery).
     show(els.cursor, false);
+    els.passRing.style.setProperty('--p', 0);
+    if (hoverEl) { hoverEl.classList.remove('hover'); hoverEl = null; }
     requestAnimationFrame(loop);
     return;
   }

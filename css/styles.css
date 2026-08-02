@@ -60,7 +60,13 @@ button.linkish {
 .hint, .status { opacity: 0.65; font-size: 0.9rem; min-height: 1.2em; }
 .status.err { color: #fda4af; opacity: 1; }
 .join-row { display: flex; gap: 8px; }
-.join-row input { flex: 1; text-align: center; font-size: 1.2rem; letter-spacing: 4px; text-transform: uppercase; }
+.join-row input {
+  /* flex items refuse to shrink below their intrinsic width without min-width:0,
+     which pushed the Join button off-screen on iPhone */
+  flex: 1; width: 0; min-width: 0;
+  text-align: center; font-size: 1.2rem; letter-spacing: 4px; text-transform: uppercase;
+}
+.join-row button { flex-shrink: 0; }
 .seg { display: inline-flex; border-radius: 10px; overflow: hidden; border: 1px solid #33415c; }
 .seg.wide { width: 100%; }
 .seg.wide button { flex: 1; }
@@ -118,6 +124,8 @@ button.linkish {
   z-index: 8; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
   background: rgba(0,0,0,0.55); color: #fff; font-size: 1.1rem;
 }
+.ctrl-toggle { top: calc(66px + var(--sat)); }
+.ctrl-toggle.touch-on { background: rgba(244,114,182,0.75); }
 
 .modal {
   position: absolute; inset: 0; z-index: 20; display: grid; place-items: center;
