@@ -46,6 +46,9 @@ export async function initSocial(user, handlers) {
   // --- profile + friend code (claim the code doc once, retry on collision)
   const meRef = doc(db, 'users', user.uid);
   const snap = await getDoc(meRef);
+  myStats = snap.exists() && snap.data().stats
+    ? { games: snap.data().stats.games || 0, wins: snap.data().stats.wins || 0 }
+    : { games: 0, wins: 0 };
   let code = snap.exists() ? snap.data().code : null;
   if (!code) {
     for (let tries = 0; tries < 5 && !code; tries++) {
@@ -117,6 +120,26 @@ export async function initSocial(user, handlers) {
 }
 
 export function myCode() { return me?.code ?? null; }
+
+// ---------------------------------------------------------------- stats
+
+let myStats = { games: 0, wins: 0 };
+
+export function getStats() { return myStats; }
+
+/** Bump all-time games/wins on the signed-in profile. Returns new stats. */
+export async function recordGameResult(won) {
+  if (!me) return null;
+  myStats = { games: myStats.games + 1, wins: myStats.wins + (won ? 1 : 0) };
+  try {
+    const { db, api } = await ensureFirestore();
+    await api.updateDoc(api.doc(db, 'users', me.uid), {
+      'stats.games': api.increment(1),
+      'stats.wins': api.increment(won ? 1 : 0),
+    });
+  } catch { /* keep the local tally; sync again next game */ }
+  return myStats;
+}
 
 /** Send a friend request by code. Returns the friend's name. */
 export async function addFriendByCode(rawCode) {

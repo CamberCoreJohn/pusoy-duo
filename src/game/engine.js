@@ -56,9 +56,29 @@ export class PusoyEngine {
     this.mustIncludeLowest = false;
     this.log.push({ player, type: 'play', combo: v.combo.name, cards: cardIds });
 
-    if (this.hands[player].length === 0) this.winner = player;
-    else this._advance(player);
+    if (this.hands[player].length === 0) {
+      this.winner = player;
+    } else if (v.combo.shape === 1 && this._isUnbeatableSingle(v.combo, player)) {
+      // The highest card still in play cannot be answered: the player takes
+      // control immediately instead of waiting for everyone to pass.
+      this.log.push({ player, type: 'control', cards: cardIds, combo: v.combo.name });
+      this.pile = null;
+      this.pileOwner = -1;
+      // turn stays with the player: fresh lead
+    } else {
+      this._advance(player);
+    }
     return { ok: true };
+  }
+
+  /** True when no card left in any other hand outranks this single. */
+  _isUnbeatableSingle(combo, player) {
+    const v = cardValue(combo.cards[0]);
+    for (let i = 0; i < this.n; i++) {
+      if (i === player) continue;
+      for (const c of this.hands[i]) if (cardValue(c) > v) return false;
+    }
+    return true;
   }
 
   pass(player) {

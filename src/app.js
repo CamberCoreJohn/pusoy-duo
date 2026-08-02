@@ -15,7 +15,7 @@ import { Party } from './net/peer.js';
 import { HandInput } from './gestures/hands.js';
 import { AvatarSystem } from './avatars.js';
 import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest, authErrorMessage, signInWithGoogle } from './auth/auth.js';
-import { initSocial, stopSocial, myCode, addFriendByCode, respondRequest, sendInvite, answerInvite } from './social/friends.js';
+import { initSocial, stopSocial, myCode, addFriendByCode, respondRequest, sendInvite, answerInvite, getStats, recordGameResult } from './social/friends.js';
 import { runIntro } from './intro.js';
 import { flyCards, passBubble, swooshPile, shakeTable, rainbowSweep, confettiBurst, confettiRain } from './fx.js';
 
@@ -25,7 +25,7 @@ const els = [
   'authError', 'authOr', 'guestName', 'btnGuest', 'authNote', 'btnGoogle',
   'friendsCard', 'myCodePill', 'requestsList', 'friendsList', 'friendCode', 'btnAddFriend', 'friendsStatus',
   'ringModal', 'ringText', 'btnRingAccept', 'btnRingDecline',
-  'homeScreen', 'greeting', 'btnCall', 'btnJoin', 'joinCode', 'btnPractice', 'homeStatus', 'btnSignOut',
+  'homeScreen', 'greeting', 'myStats', 'btnCall', 'btnJoin', 'joinCode', 'btnPractice', 'homeStatus', 'btnSignOut',
   'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'videoPark', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
   'btnMute', 'btnCam', 'btnGames', 'btnHangup',
   'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
@@ -142,7 +142,33 @@ function onUser(user) {
   els.btnSignOut.textContent = user.isGuest ? 'Change name' : 'Sign out';
   showScreen(els.homeScreen);
   if (!user.isGuest && user.uid) startSocial();
-  else show(els.friendsCard, false);
+  else { show(els.friendsCard, false); renderStats(loadGuestStats()); }
+}
+
+// ---------------------------------------------------------------- stats
+
+const GUEST_STATS_KEY = 'kritzzz-stats';
+
+function loadGuestStats() {
+  try { return JSON.parse(localStorage.getItem(GUEST_STATS_KEY)) || { games: 0, wins: 0 }; }
+  catch { return { games: 0, wins: 0 }; }
+}
+
+function renderStats(s) {
+  els.myStats.textContent = s && s.games > 0 ? `🏆 ${s.wins} wins · ${s.games} games` : '';
+}
+
+async function recordResult(won) {
+  if (DEMO) return;
+  if (currentUser && !currentUser.isGuest) {
+    renderStats((await recordGameResult(won)) || getStats());
+  } else {
+    const s = loadGuestStats();
+    s.games += 1;
+    if (won) s.wins += 1;
+    localStorage.setItem(GUEST_STATS_KEY, JSON.stringify(s));
+    renderStats(s);
+  }
 }
 
 // ================================================================ friends & invites
@@ -159,6 +185,7 @@ async function startSocial() {
     });
     els.myCodePill.textContent = myCode();
     show(els.friendsCard, true);
+    renderStats(getStats());
   } catch (e) {
     console.warn('social init failed', e);
     els.friendsStatus.textContent = 'Friends unavailable: ' + e.message;
@@ -635,6 +662,7 @@ function updateTableSpots(snap) {
   for (const spot of els.tableLayer.children) {
     const i = Number(spot.dataset.seat);
     spot.classList.toggle('turn', snap.turn === i && snap.winner < 0);
+    spot.classList.toggle('control', !snap.pile && snap.turn === i && snap.winner < 0);
     const label = spot.querySelector('.spot-label');
     if (label) label.innerHTML = `${seatName(i)} · <span class="cnt">${snap.counts[i]}</span>`;
     const mini = spot.querySelector('.mini-cards');
@@ -788,6 +816,8 @@ function startRound() {
   lastPileKey = ''; // first play of the round should animate
   lastLogN = 0;
   winnerCelebrated = false;
+  customOrder = null;
+  if (sortMode === 'custom') { sortMode = 'rank'; els.btnSort.textContent = SORTS.rank.label; }
   broadcast();
 }
 
@@ -808,13 +838,16 @@ function scheduleAI() {
   clearTimeout(aiTimer);
   if (!iAmAuthority || !engine || engine.winner >= 0) return;
   if (!seats[engine.turn]?.isAI) return;
-  const delay = AI_DELAY_MS[0] + Math.random() * (AI_DELAY_MS[1] - AI_DELAY_MS[0]);
+  let delay = AI_DELAY_MS[0] + Math.random() * (AI_DELAY_MS[1] - AI_DELAY_MS[0]);
+  // give the take-control celebration room to play out
+  if (engine.log[engine.log.length - 1]?.type === 'control') delay += 2000;
   aiTimer = setTimeout(() => {
     if (!engine || !seats[engine.turn]?.isAI || engine.winner >= 0) return;
     const seat = engine.turn;
     const ids = chooseAiPlay(engine.hands[seat], engine.pile, {
       mustInclude: engine.mustIncludeLowest ? engine.lowestInPlay : null,
       rules: engine.rules,
+      oppCounts: engine.hands.filter((_, i) => i !== seat).map((h) => h.length),
     });
     const res = ids ? engine.play(seat, ids) : engine.pass(seat);
     if (!res.ok) {
@@ -857,18 +890,65 @@ function tryPass() {
 }
 
 // Hand sorting is purely cosmetic and local: snapshots arrive rank-sorted and
-// each mode re-orders the fan for display only.
+// each mode re-orders the fan for display only. Dragging a card sideways
+// switches to a manual arrangement ('custom') until SORT is tapped again.
 const SORTS = {
   rank: { label: 'SORT: RANK', fn: (a, b) => cardValue(a) - cardValue(b) },  // pairs sit together
   suit: { label: 'SORT: SUIT', fn: (a, b) => a.s - b.s || a.r - b.r },       // flushes sit together
 };
 let sortMode = 'rank';
+let customOrder = null; // card ids in the user's own arrangement
 
 els.btnSort.onclick = () => {
+  customOrder = null;
   sortMode = sortMode === 'rank' ? 'suit' : 'rank';
   els.btnSort.textContent = SORTS[sortMode].label;
   refreshHand();
 };
+
+// --- drag to rearrange (mouse + touch via pointer events) ---
+let drag = null;          // { el, id, startX, active }
+let suppressCardClick = false; // a drag shouldn't also toggle selection
+
+els.handArea.addEventListener('pointerdown', (e) => {
+  const card = e.target.closest('.card[data-id]');
+  if (!card) return;
+  drag = { el: card, id: card.dataset.id, startX: e.clientX, active: false };
+});
+
+els.handArea.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  if (!drag.active) {
+    if (Math.abs(e.clientX - drag.startX) < 14) return;
+    drag.active = true;
+    drag.el.classList.add('dragging');
+    try { drag.el.setPointerCapture(e.pointerId); } catch { /* fine without capture */ }
+  }
+  // live-reorder: slot the dragged card before the first sibling whose
+  // midpoint is right of the pointer
+  let before = null;
+  for (const c of els.handArea.children) {
+    if (c === drag.el) continue;
+    const r = c.getBoundingClientRect();
+    if (e.clientX < r.left + r.width / 2) { before = c; break; }
+  }
+  els.handArea.insertBefore(drag.el, before);
+});
+
+const endDrag = () => {
+  if (!drag) return;
+  if (drag.active) {
+    drag.el.classList.remove('dragging');
+    customOrder = [...els.handArea.children].map((c) => c.dataset.id);
+    sortMode = 'custom';
+    els.btnSort.textContent = 'SORT: MINE';
+    suppressCardClick = true;
+    setTimeout(() => { suppressCardClick = false; }, 80);
+  }
+  drag = null;
+};
+els.handArea.addEventListener('pointerup', endDrag);
+els.handArea.addEventListener('pointercancel', endDrag);
 
 els.btnPlay.onclick = tryPlay;
 els.btnPass.onclick = tryPass;
@@ -894,6 +974,7 @@ function cardEl(card, { selectable = false } = {}) {
 }
 
 function toggleCard(id) {
+  if (suppressCardClick) return;
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
   refreshHand();
@@ -920,6 +1001,28 @@ function seatRect(seat) {
   return (spot?.querySelector('.mini-cards') || spot)?.getBoundingClientRect() || null;
 }
 
+/**
+ * Take-control sequence: the unbeatable card flies in and lands, god-rays
+ * bloom, then the card sweeps off to its owner — who now holds the lead.
+ */
+function controlFx(log) {
+  const owner = log.player;
+  const you = state?.you ?? mySeat;
+  const src = seatRect(owner);
+  const temp = log.cards.map((id) => cardEl(id));
+  temp.forEach((el) => el.classList.add('golden'));
+  els.pileCards.append(...temp);
+  const flightMs = src ? flyCards(src, temp, { faceDown: owner !== you }) : 0;
+  setTimeout(() => spawnSunrays(), flightMs);
+  setTimeout(() => {
+    if (gameActive) {
+      swooshPile(temp, seatRect(owner));
+      showToast(owner === you ? 'You take control 👑' : `${seatName(owner)} takes control 👑`, 2200, 'info');
+    }
+    temp.forEach((el) => el.remove());
+  }, flightMs + 1500);
+}
+
 function applyState(snap) {
   if (!gameActive) showGame(); // guest: first snapshot after setup
   state = snap;
@@ -941,6 +1044,10 @@ function applyState(snap) {
   if (snap.logN !== lastLogN && snap.lastLog?.type === 'pass') {
     const r = seatRect(snap.lastLog.player);
     if (r) passBubble(r);
+  }
+  // unbeatable card: sunrays over the play, then it sweeps to its owner
+  if (snap.logN !== lastLogN && snap.lastLog?.type === 'control') {
+    controlFx(snap.lastLog);
   }
   lastLogN = snap.logN;
 
@@ -988,7 +1095,9 @@ function applyState(snap) {
   }
   els.pileLabel.textContent = snap.pile
     ? `${snap.pile.name} — ${snap.pileOwner === snap.you ? 'yours' : seatName(snap.pileOwner)}`
-    : (snap.mustIncludeLowest ? `Lead with the ${snap.lowestInPlay}` : 'Fresh lead — play anything');
+    : snap.mustIncludeLowest ? `Lead with the ${snap.lowestInPlay}`
+    : snap.turn === snap.you ? '👑 You have control — play anything'
+    : `👑 ${seatName(snap.turn)} has control`;
 
   const yourTurn = snap.turn === snap.you && snap.winner < 0;
   els.turnBanner.textContent = snap.winner >= 0 ? '' : yourTurn ? 'Your turn' : `${seatName(snap.turn)}'s turn…`;
@@ -998,7 +1107,11 @@ function applyState(snap) {
 
   if (snap.winner >= 0) {
     els.gameOverText.textContent = snap.winner === snap.you ? 'You win! 🎉' : `${seatName(snap.winner)} wins! 💖`;
-    if (!winnerCelebrated) { winnerCelebrated = true; confettiRain(); }
+    if (!winnerCelebrated) {
+      winnerCelebrated = true;
+      confettiRain();
+      recordResult(snap.winner === snap.you);
+    }
     show(els.gameOver, true);
   } else {
     winnerCelebrated = false;
@@ -1008,7 +1121,9 @@ function applyState(snap) {
 
 function refreshHand() {
   if (!state) return;
-  const ordered = state.yourHand.slice().sort(SORTS[sortMode].fn);
+  const ordered = sortMode === 'custom' && customOrder
+    ? state.yourHand.slice().sort((a, b) => customOrder.indexOf(a.id) - customOrder.indexOf(b.id))
+    : state.yourHand.slice().sort(SORTS[sortMode === 'custom' ? 'rank' : sortMode].fn);
   els.handArea.replaceChildren(...ordered.map((c) => {
     const el = cardEl(c, { selectable: true });
     if (selected.has(c.id)) el.classList.add('selected');
@@ -1030,8 +1145,9 @@ function updateButtons() {
   els.btnPass.disabled = !(yourTurn && state.pile);
 }
 
-function showToast(msg, ms = 2200) {
+function showToast(msg, ms = 2200, kind = 'error') {
   els.toast.textContent = msg;
+  els.toast.classList.toggle('info', kind === 'info');
   show(els.toast, true);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => show(els.toast, false), ms);

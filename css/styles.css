@@ -272,6 +272,11 @@ button.linkish:hover { color: var(--text); }
 .player-spot.turn canvas {
   border-color: var(--ok); box-shadow: 0 0 26px rgba(52, 211, 153, 0.5);
 }
+/* holder of the lead: crown on the label, golden ring on the avatar */
+.player-spot.control .spot-label::before { content: '👑 '; }
+.player-spot.control canvas {
+  border-color: #ffd778; box-shadow: 0 0 26px rgba(255, 214, 110, 0.55);
+}
 .spot-label { padding: 4px 13px; font-size: 0.85rem; white-space: nowrap; }
 .spot-label .cnt { font-weight: 800; color: var(--accent-2); }
 
@@ -451,6 +456,12 @@ button.linkish:hover { color: var(--text); }
 .hand-area {
   position: absolute; bottom: calc(86px + var(--sab)); left: 50%; transform: translateX(-50%);
   display: flex; z-index: 6; max-width: 96vw;
+  touch-action: none; /* horizontal drags rearrange cards; don't let iOS eat them */
+}
+.hand-area .card.dragging {
+  opacity: 0.9; transform: translateY(-34px) scale(1.08) rotate(2deg);
+  transition: none; z-index: 12;
+  box-shadow: 0 0 0 2px var(--accent-2), 0 18px 30px rgba(0, 0, 0, 0.6);
 }
 .hand-area .card { margin-left: calc(var(--card-w) * -0.42); flex-shrink: 0; }
 .hand-area .card:first-child { margin-left: 0; }
@@ -490,6 +501,10 @@ button.action:disabled { opacity: 0.3; cursor: default; }
 .turn-banner.yours { color: var(--ok); }
 .turn-banner:empty { display: none; }
 
+.stats-line { color: var(--muted); font-size: 0.9rem; letter-spacing: 0.03em; position: relative; }
+.stats-line:empty { display: none; }
+
+.toast.info { background: rgba(18, 22, 36, 0.92); border: 1px solid var(--stroke); }
 .toast {
   position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
   background: rgba(244, 63, 94, 0.9);
