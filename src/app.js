@@ -14,12 +14,15 @@ import { chooseAiPlay } from './game/ai.js';
 import { Party } from './net/peer.js';
 import { HandInput } from './gestures/hands.js';
 import { AvatarSystem } from './avatars.js';
-import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest, authErrorMessage } from './auth/auth.js';
+import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest, authErrorMessage, signInWithGoogle } from './auth/auth.js';
+import { initSocial, stopSocial, myCode, addFriendByCode, respondRequest, sendInvite, answerInvite } from './social/friends.js';
 
 const $ = (id) => document.getElementById(id);
 const els = [
   'authScreen', 'authTabs', 'authName', 'authEmail', 'authPassword', 'btnAuthSubmit',
-  'authError', 'authOr', 'guestName', 'btnGuest', 'authNote',
+  'authError', 'authOr', 'guestName', 'btnGuest', 'authNote', 'btnGoogle',
+  'friendsCard', 'myCodePill', 'requestsList', 'friendsList', 'friendCode', 'btnAddFriend', 'friendsStatus',
+  'ringModal', 'ringText', 'btnRingAccept', 'btnRingDecline',
   'homeScreen', 'greeting', 'btnCall', 'btnJoin', 'joinCode', 'btnPractice', 'homeStatus', 'btnSignOut',
   'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'videoPark', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
   'btnMute', 'btnCam', 'btnSwap', 'btnGames', 'btnHangup',
@@ -70,6 +73,7 @@ let authTab = 'signin';
 
 function renderAuthScreen() {
   const hasAccounts = authAvailable;
+  show(els.btnGoogle, hasAccounts);
   show(els.authTabs, hasAccounts);
   show(els.authName, hasAccounts && authTab === 'register');
   show(els.authEmail, hasAccounts);
@@ -108,6 +112,12 @@ els.btnAuthSubmit.onclick = async () => {
   }
 };
 
+els.btnGoogle.onclick = async () => {
+  els.authError.textContent = '';
+  try { await signInWithGoogle(); } // redirect flow returns via onAuthStateChanged
+  catch (e) { els.authError.textContent = authErrorMessage(e); }
+};
+
 els.btnGuest.onclick = () => {
   const name = els.guestName.value.trim();
   if (!name) { els.authError.textContent = 'Enter your name first'; return; }
@@ -115,8 +125,10 @@ els.btnGuest.onclick = () => {
 };
 
 els.btnSignOut.onclick = async () => {
+  stopSocial();
   await signOutUser();
   currentUser = null;
+  show(els.friendsCard, false);
   showScreen(els.authScreen);
 };
 
@@ -127,7 +139,143 @@ function onUser(user) {
   show(els.btnSignOut, true);
   els.btnSignOut.textContent = user.isGuest ? 'Change name' : 'Sign out';
   showScreen(els.homeScreen);
+  if (!user.isGuest && user.uid) startSocial();
+  else show(els.friendsCard, false);
 }
+
+// ================================================================ friends & invites
+
+let outgoingInvite = null;   // handle from sendInvite
+let incomingInvite = null;   // latest ringing invite doc
+
+async function startSocial() {
+  try {
+    await initSocial(currentUser, {
+      onFriends: renderFriends,
+      onRequests: renderRequests,
+      onInvite: onIncomingInvite,
+    });
+    els.myCodePill.textContent = myCode();
+    show(els.friendsCard, true);
+  } catch (e) {
+    console.warn('social init failed', e);
+    els.friendsStatus.textContent = 'Friends unavailable: ' + e.message;
+    show(els.friendsCard, true);
+  }
+}
+
+els.myCodePill.onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(myCode() || '');
+    showToastHome('Code copied — send it to a friend');
+  } catch { /* visible anyway */ }
+};
+
+function showToastHome(msg) { els.friendsStatus.textContent = msg; setTimeout(() => { if (els.friendsStatus.textContent === msg) els.friendsStatus.textContent = ''; }, 2500); }
+
+els.btnAddFriend.onclick = async () => {
+  const code = els.friendCode.value.trim();
+  if (code.length < 6) { showToastHome('Enter a 6-character code'); return; }
+  try {
+    const name = await addFriendByCode(code);
+    els.friendCode.value = '';
+    showToastHome(`Request sent to ${name}`);
+  } catch (e) { showToastHome(e.message); }
+};
+
+function renderRequests(list) {
+  els.requestsList.replaceChildren(...list.map((r) => {
+    const row = document.createElement('div');
+    row.className = 'request-row';
+    row.innerHTML = `<span class="fname">🤝 ${r.name}</span>`;
+    const ok = document.createElement('button');
+    ok.className = 'ok-btn'; ok.textContent = 'Accept';
+    ok.onclick = () => respondRequest(r.id, true).catch((e) => showToastHome(e.message));
+    const no = document.createElement('button');
+    no.className = 'no-btn'; no.textContent = 'Ignore';
+    no.onclick = () => respondRequest(r.id, false).catch((e) => showToastHome(e.message));
+    row.append(ok, no);
+    return row;
+  }));
+}
+
+function renderFriends(list) {
+  if (list.length === 0) {
+    els.friendsList.innerHTML = '<div class="hint">No friends yet — swap codes!</div>';
+    return;
+  }
+  els.friendsList.replaceChildren(...list.map((f) => {
+    const row = document.createElement('div');
+    row.className = 'friend-row' + (f.online ? ' online' : '');
+    row.innerHTML = `<span class="dot"></span><span class="fname">${f.name}</span>`;
+    const call = document.createElement('button');
+    call.className = 'call-btn';
+    call.textContent = f.online ? '📞 Call' : 'Offline';
+    call.disabled = !f.online;
+    call.onclick = () => callFriend(f);
+    row.appendChild(call);
+    return row;
+  }));
+}
+
+async function callFriend(f) {
+  try {
+    els.homeStatus.textContent = 'Starting camera…';
+    await getCamera();
+    newParty();
+    const code = await party.host(localStream);
+    iAmAuthority = true;
+    solo = false;
+    mySeat = 0;
+    els.callCode.textContent = code;
+    show(els.codeBanner, true);
+    updateRoster([currentUser.name]);
+    enterCall();
+    showToast(`Ringing ${f.name}…`, 4000);
+    outgoingInvite = await sendInvite(f.uid, code);
+    outgoingInvite.watch((status) => {
+      if (status === 'declined') showToast(`${f.name} can't talk right now`, 3500);
+      if (status === 'accepted') showToast(`${f.name} is joining…`, 2500);
+    });
+    setTimeout(() => outgoingInvite?.cancel(), 50_000); // stop ringing eventually
+  } catch (e) {
+    els.homeStatus.textContent = 'Error: ' + e.message;
+  }
+}
+
+function onIncomingInvite(inv) {
+  incomingInvite = inv;
+  // don't interrupt an active call with a ring
+  const inCall = !els.callScreen.classList.contains('hidden');
+  if (!inv || inCall) { show(els.ringModal, false); return; }
+  els.ringText.textContent = `${inv.fromName} is calling`;
+  show(els.ringModal, true);
+}
+
+els.btnRingAccept.onclick = async () => {
+  const inv = incomingInvite;
+  show(els.ringModal, false);
+  if (!inv) return;
+  try {
+    await getCamera();
+    await answerInvite(inv.id, true);
+    newParty();
+    iAmAuthority = false;
+    solo = false;
+    els.callCode.textContent = inv.room;
+    show(els.codeBanner, true);
+    await party.join(inv.room, localStream);
+  } catch (e) {
+    showToastHome('Could not join: ' + e.message);
+    showScreen(els.homeScreen);
+  }
+};
+
+els.btnRingDecline.onclick = () => {
+  const inv = incomingInvite;
+  show(els.ringModal, false);
+  if (inv) answerInvite(inv.id, false).catch(() => {});
+};
 
 // ================================================================ camera
 
@@ -325,6 +473,8 @@ els.btnCam.onclick = () => {
 
 els.btnHangup.onclick = () => {
   clearTimeout(aiTimer);
+  outgoingInvite?.cancel();
+  outgoingInvite = null;
   party?.destroy();
   party = null;
   peers.clear();

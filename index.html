@@ -20,6 +20,9 @@
     <h1 class="wordmark">Kritzzz</h1>
     <p class="tagline">Video calls with games built in.</p>
     <div class="panel">
+      <button id="btnGoogle" class="big hidden">
+        <span class="gmark">G</span> Continue with Google
+      </button>
       <div id="authTabs" class="seg wide hidden">
         <button data-tab="signin" class="on">Sign in</button>
         <button data-tab="register">Register</button>
@@ -50,6 +53,22 @@
       <button id="btnPractice" class="big solo">🎮 Practice vs AI</button>
       <div id="homeStatus" class="status"></div>
     </div>
+
+    <!-- Friends (signed-in accounts only) -->
+    <div id="friendsCard" class="panel friends hidden">
+      <div class="friends-head">
+        <h2>Friends</h2>
+        <button id="myCodePill" class="code-pill" title="Copy your code">···</button>
+      </div>
+      <div id="requestsList" class="requests"></div>
+      <div id="friendsList" class="friends-list"><div class="hint">No friends yet — swap codes!</div></div>
+      <div class="join-row">
+        <input id="friendCode" maxlength="6" placeholder="FRIEND CODE" autocomplete="off" />
+        <button id="btnAddFriend" class="big solo">Add</button>
+      </div>
+      <div id="friendsStatus" class="status"></div>
+    </div>
+
     <button id="btnSignOut" class="linkish">Sign out</button>
   </div>
 
@@ -126,6 +145,18 @@
 
     <div id="toast" class="toast hidden"></div>
     <div id="cursor" class="cursor hidden"><div class="cursor-dot"></div></div>
+  </div>
+
+  <!-- Incoming call ring (any screen while signed in) -->
+  <div id="ringModal" class="modal ring hidden">
+    <div class="panel ring-box">
+      <div class="ring-pulse">📞</div>
+      <div id="ringText" class="ring-text"></div>
+      <div class="ring-actions">
+        <button id="btnRingAccept" class="big">Join</button>
+        <button id="btnRingDecline" class="linkish">Not now</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="src/app.js"></script>

@@ -37,12 +37,19 @@ and the internet, host on HTTPS (GitHub Pages works as-is).
 
 `?demo` = 2-player hotseat, no camera/network/auth (testing).
 
-## Enabling email registration
+## Accounts, friends & invites
 
-Registration needs a (free) Firebase project — see the step-by-step comment in
-[src/auth/firebase-config.js](src/auth/firebase-config.js). Paste your web app
-config there and email accounts light up; while it's `null` the app is
-guest-only. The config values are public identifiers, safe to commit.
+Needs a (free) Firebase project — the full checklist is in
+[src/auth/firebase-config.js](src/auth/firebase-config.js): enable Google
+sign-in (+ optional email/password), create Firestore, publish
+[firestore.rules](firestore.rules), paste the web config. While the config is
+`null` the app is guest-only.
+
+Signed-in users get a 6-character friend code. Add a friend by code → they
+accept → both see each other with an online dot (45s presence heartbeat).
+Tap 📞 Call and their app rings — accepting drops them straight into your
+call, no room code to copy. Invites, requests, and presence all live in
+Firestore behind the published security rules; calls and games remain P2P.
 
 ## Gestures (during a game)
 
