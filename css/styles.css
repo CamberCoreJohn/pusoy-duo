@@ -296,7 +296,55 @@ button.linkish:hover { color: var(--text); }
   display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 4;
 }
 .pile-label { padding: 5px 15px; font-size: 0.88rem; color: var(--muted); }
-.pile-cards { display: flex; gap: 6px; }
+.pile-cards { display: flex; gap: 6px; position: relative; }
+.pile-cards .card { z-index: 1; }
+
+/* ---------- play animations ---------- */
+/* cards slam down from above with a settle */
+@keyframes cardLand {
+  0%   { transform: translateY(-90px) scale(1.5) rotate(-4deg); opacity: 0; }
+  55%  { transform: translateY(5px) scale(0.97); opacity: 1; }
+  75%  { transform: translateY(-3px) scale(1.02); }
+  100% { transform: none; opacity: 1; }
+}
+.pile-cards .card.land { animation: cardLand 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+
+/* the table shudders under the impact — heavier for 5-card hands */
+@keyframes thump {
+  0%, 100% { transform: none; }
+  40% { transform: translateY(3px); }
+  65% { transform: translateY(-2px); }
+}
+@keyframes thumpBig {
+  0%, 100% { transform: none; }
+  25% { transform: translateY(7px) scale(1.02); }
+  45% { transform: translateY(-4px); }
+  65% { transform: translateY(3px); }
+  82% { transform: translateY(-1px); }
+}
+.pile-cards.thump { animation: thump 0.32s ease-out 0.28s; }
+.pile-cards.thump-big { animation: thumpBig 0.55s ease-out 0.3s; }
+
+/* the 2♦ arrives with golden god-rays */
+.sunrays {
+  position: absolute; left: 50%; top: 50%; width: min(400px, 90vw); aspect-ratio: 1;
+  transform: translate(-50%, -50%); pointer-events: none; z-index: 0;
+  background: repeating-conic-gradient(from 0deg,
+    rgba(255, 214, 110, 0.55) 0deg 6deg, transparent 6deg 22deg);
+  -webkit-mask: radial-gradient(circle, #000 8%, transparent 68%);
+  mask: radial-gradient(circle, #000 8%, transparent 68%);
+  animation: sunrays 1.8s ease-out forwards;
+}
+@keyframes sunrays {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.25) rotate(0deg); }
+  22%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2) rotate(38deg); }
+}
+@keyframes goldenPulse {
+  0%, 100% { box-shadow: 0 0 0 2px #ffd778, 0 0 22px rgba(255, 199, 88, 0.75), 0 3px 12px rgba(0, 0, 0, 0.5); }
+  50%      { box-shadow: 0 0 0 3px #ffe4a3, 0 0 40px rgba(255, 214, 110, 0.95), 0 3px 12px rgba(0, 0, 0, 0.5); }
+}
+.pile-cards .card.golden { animation: cardLand 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both, goldenPulse 1.4s ease-in-out 0.4s 2; }
 
 .card {
   width: var(--card-w); height: var(--card-h);
@@ -411,8 +459,29 @@ button.action:disabled { opacity: 0.3; cursor: default; }
   .call-controls button { width: 48px; height: 48px; }
   .pile-area { transform: translate(-50%, -80%); }
   .turn-banner { bottom: auto; top: calc(64px + var(--sat)); }
-  .opp-bar { top: calc(14px + var(--sat)); max-width: 92vw; }
-  .tile-strip video { width: clamp(84px, 24vw, 130px); }
+  .opp-bar { top: calc(14px + var(--sat)); max-width: 96vw; gap: 6px; }
+  .opp-chip { padding: 5px 11px; font-size: 0.78rem; }
+
+  /* 3-4 person calls: stack feeds in rows instead of skinny columns */
+  .video-grid[data-count="2"] { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  .video-grid[data-count="3"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .video-grid[data-count="3"] video:last-child { grid-column: 1 / -1; }
+
+  /* tiles become a horizontal row so they can't stack down over the cards */
+  .tile-strip {
+    flex-direction: row; left: 8px; right: 8px; top: calc(56px + var(--sat));
+    justify-content: flex-end; gap: 6px;
+  }
+  .tile-strip video { width: clamp(68px, 21vw, 110px); }
+  /* in-game: drop below the opponent chips and shrink further */
+  .gaming .tile-strip { top: calc(94px + var(--sat)); }
+  .gaming .tile-strip video { width: clamp(56px, 17vw, 92px); }
+
+  .code-banner { font-size: 0.85rem; padding: 6px 12px; max-width: 94vw; }
+  .actions { gap: 8px; }
+  button.action { padding: 10px 18px; font-size: 0.95rem; min-height: 44px; }
+  .action.sort { font-size: 0.78rem; }
+
   /* banner is at the top on phones; keep the self avatar above the hand fan */
   .player-spot.self { bottom: calc(225px + var(--sab)); }
 }

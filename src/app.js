@@ -29,7 +29,7 @@ const els = [
   'btnMute', 'btnCam', 'btnSwap', 'btnGames', 'btnHangup',
   'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
   'gameLayer', 'btnLeaveGame', 'btnControls', 'btnTableMode', 'tableLayer',
-  'oppBar', 'pileLabel', 'pileCards', 'turnBanner', 'handArea',
+  'oppBar', 'pileLabel', 'pileArea', 'pileCards', 'turnBanner', 'handArea',
   'btnSort', 'btnPlay', 'btnPass', 'passRing', 'gameOver', 'gameOverText', 'btnRematch', 'btnEndGame',
   'toast', 'cursor',
 ].reduce((m, id) => (m[id] = $(id), m), {});
@@ -737,6 +737,7 @@ function hideGame() {
   selected.clear();
   show(els.gameLayer, false);
   show(els.gameOver, false);
+  lastPileKey = '';
   els.callScreen.classList.remove('gaming');
   show(els.cursor, false);
   layout();
@@ -763,6 +764,7 @@ async function startGestures() {
 function startRound() {
   engine = new PusoyEngine({ players: seats.length });
   selected.clear();
+  lastPileKey = ''; // first play of the round should animate
   broadcast();
 }
 
@@ -874,11 +876,28 @@ function toggleCard(id) {
   refreshHand();
 }
 
+// The pile signature tells a fresh play apart from a mere re-render, so the
+// landing animations only fire when cards were actually just put down.
+let lastPileKey = '';
+
+function spawnSunrays() {
+  const rays = document.createElement('div');
+  rays.className = 'sunrays';
+  els.pileCards.appendChild(rays);
+  setTimeout(() => rays.remove(), 1900);
+}
+
 function applyState(snap) {
   if (!gameActive) showGame(); // guest: first snapshot after setup
   state = snap;
   const ids = new Set(snap.yourHand.map((c) => c.id));
   for (const id of selected) if (!ids.has(id)) selected.delete(id);
+
+  const pileKey = snap.pile
+    ? snap.pile.cards.map((c) => c.id).join(',') + '@' + snap.pileOwner
+    : '';
+  const isNewPlay = !!pileKey && pileKey !== lastPileKey;
+  lastPileKey = pileKey;
 
   els.oppBar.replaceChildren(...snap.counts.flatMap((count, i) => {
     if (i === snap.you) return [];
@@ -888,7 +907,21 @@ function applyState(snap) {
     return [chip];
   }));
 
-  els.pileCards.replaceChildren(...(snap.pile ? snap.pile.cards.map((c) => cardEl(c)) : []));
+  els.pileCards.replaceChildren(...(snap.pile ? snap.pile.cards.map((c, i) => {
+    const el = cardEl(c);
+    if (isNewPlay) {
+      el.classList.add('land');
+      el.style.animationDelay = i * 50 + 'ms';
+      if (c.id === '2D') el.classList.add('golden'); // the boss card
+    }
+    return el;
+  }) : []));
+  if (isNewPlay) {
+    els.pileCards.classList.remove('thump', 'thump-big');
+    void els.pileCards.offsetWidth; // restart the animation
+    els.pileCards.classList.add(snap.pile.cards.length >= 5 ? 'thump-big' : 'thump');
+    if (snap.pile.cards.some((c) => c.id === '2D')) spawnSunrays();
+  }
   els.pileLabel.textContent = snap.pile
     ? `${snap.pile.name} — ${snap.pileOwner === snap.you ? 'yours' : seatName(snap.pileOwner)}`
     : (snap.mustIncludeLowest ? `Lead with the ${snap.lowestInPlay}` : 'Fresh lead — play anything');
