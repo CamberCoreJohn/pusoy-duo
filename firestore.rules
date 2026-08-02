@@ -26,7 +26,9 @@ service cloud.firestore {
     // can see or touch it. The requester creates it as pending; the OTHER
     // side accepts; either side may delete (decline / unfriend).
     match /friendships/{id} {
-      allow read: if signedIn() && request.auth.uid in resource.data.users;
+      // resource == null: reading a not-yet-existing doc (the client's
+      // "already friends?" check) must return not-found, not a denial.
+      allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.users);
       allow create: if signedIn()
         && request.auth.uid in request.resource.data.users
         && request.resource.data.requestedBy == request.auth.uid

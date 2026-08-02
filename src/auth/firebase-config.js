@@ -12,14 +12,11 @@
 // These values are public identifiers, not secrets — committing them is fine.
 // While this is null the app runs in guest-only mode (no friends/invites).
 
-export const firebaseConfig = null;
-
-// Example shape:
-// export const firebaseConfig = {
-//   apiKey: 'AIza...',
-//   authDomain: 'kritzzz.firebaseapp.com',
-//   projectId: 'kritzzz',
-//   storageBucket: 'kritzzz.appspot.com',
-//   messagingSenderId: '1234567890',
-//   appId: '1:1234567890:web:abc123',
-// };
+export const firebaseConfig = {
+  apiKey: 'AIzaSyDQUUmTfo3vVslF8xVEvj6rr3keXYBJy8g',
+  authDomain: 'kritzzz-580af.firebaseapp.com',
+  projectId: 'kritzzz-580af',
+  storageBucket: 'kritzzz-580af.firebasestorage.app',
+  messagingSenderId: '738688918250',
+  appId: '1:738688918250:web:73873807112f23cd1a6d93',
+};
