@@ -22,11 +22,13 @@ const hex = (s) => new THREE.Color(s);
 
 // Sweeter, higher-key palette than the 2D map data — the flat top-down view
 // wanted contrast, the 3D one wants sunshine.
+// Vivid, high-key, poster-flat — closer to the game's own palette than the
+// muted naturalism the 2D map data uses.
 const CUTE = {
-  lakeside: { grass: '#6fc25a', trunk: '#a9713f', canopy: ['#4fae4a', '#79cf5c'], water: ['#57c6e8', '#2f9ad0'], sand: '#f3e2a9', path: '#d9b378' },
-  forest: { grass: '#57ab55', trunk: '#8e5f38', canopy: ['#3f9a4c', '#68c065'], water: ['#57c6e8', '#2f9ad0'], sand: '#e0cf9a', path: '#c9a877' },
-  beach: { grass: '#f4e3ae', trunk: '#b0763f', canopy: ['#57b552', '#7fd06a'], water: ['#4fd0e8', '#1f9fc9'], sand: '#fdf2cd', path: '#e3c88e' },
-  mountain: { grass: '#eef5fb', trunk: '#8a6247', canopy: ['#5e9c78', '#eaf3f8'], water: ['#bfe9f7', '#8fd2ea'], sand: '#f4fbff', path: '#cfd9e2' },
+  lakeside: { grass: '#7ed957', trunk: '#c08040', canopy: ['#5cc94f', '#8ee86a'], water: ['#2aa8e8', '#1a7fc4'], shallow: '#7fe3ee', sand: '#f7e3a6', path: '#e5c188', sky: '#63cdf5' },
+  forest: { grass: '#5fbf52', trunk: '#a06a3c', canopy: ['#43ad4e', '#74d868'], water: ['#2aa8e8', '#1a7fc4'], shallow: '#7fe3ee', sand: '#eddca4', path: '#d7b47f', sky: '#63cdf5' },
+  beach: { grass: '#f7e2a4', trunk: '#c2884a', canopy: ['#5cc94f', '#8ee86a'], water: ['#22a6e6', '#1580c0'], shallow: '#86ecef', sand: '#fdf0c4', path: '#eed49a', sky: '#63cdf5' },
+  mountain: { grass: '#f4fafe', trunk: '#96694c', canopy: ['#63ab84', '#f0f8fd'], water: ['#79d6f2', '#4fb6dd'], shallow: '#c4f0fb', sand: '#fbfeff', path: '#dde7ee', sky: '#9fdcf8' },
 };
 
 /**
@@ -34,6 +36,20 @@ const CUTE = {
  * ground curves away like a tiny planet. Patched into every material's
  * vertex stage — geometry and physics stay perfectly flat.
  */
+/** Soft round contact shadow — every object in AC sits on one. */
+function shadowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d').createRadialGradient(32, 32, 2, 32, 32, 32);
+  g.addColorStop(0, 'rgba(0,0,0,0.42)');
+  g.addColorStop(0.55, 'rgba(0,0,0,0.22)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
 function bendMaterial(mat, strength) {
   if (!mat || mat.__bent) return;
   mat.__bent = true;
@@ -74,9 +90,9 @@ export class CampRenderer3D {
     this.renderer.shadowMap.enabled = this.q.shadows;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0xbfe6f5, 1100, 2400);
-    // a tighter lens + closer camera makes everything read as a toy diorama
-    this.camera = new THREE.PerspectiveCamera(38, 1, 1, 6000);
+    // barely any haze — the look is crisp and sunny, not atmospheric
+    this.scene.fog = new THREE.Fog(0x8fd8f2, 2200, 4200);
+    this.camera = new THREE.PerspectiveCamera(34, 1, 1, 6000);
     this.camGoal = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
 
@@ -107,12 +123,25 @@ export class CampRenderer3D {
     this.truckNode = null;
     this.bobbers = [];
     this.decor = [];
+    this.shadowTex = shadowTexture();
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     this.resize();
     this._onResize = () => this.resize();
     addEventListener('resize', this._onResize);
+  }
+
+  /** A soft blob shadow lying on the ground. */
+  blobShadow(r) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(r * 2, r * 2),
+      new THREE.MeshBasicMaterial({ map: this.shadowTex, transparent: true, depthWrite: false }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 1.2;
+    m.renderOrder = -1;
+    return m;
   }
 
   destroy() {
@@ -269,11 +298,13 @@ export class CampRenderer3D {
 
   addWater(root, map) {
     const w = map.water;
-    const mat = new THREE.MeshLambertMaterial({
-      color: hex(w.colors[0]), transparent: true, opacity: 0.9,
-    });
+    const c = this.cute;
+    // deep water, a bright shallow band, then a white foam lip at the shore
+    const mat = new THREE.MeshBasicMaterial({ color: hex(c.water[0]) });
+    const shallowMat = new THREE.MeshBasicMaterial({ color: hex(c.shallow) });
+    const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.waterMat = mat;
-    const sandMat = new THREE.MeshLambertMaterial({ color: hex(w.sand) });
+    const sandMat = new THREE.MeshLambertMaterial({ color: hex(c.sand) });
     const put = (mesh, x, z, y = 0) => {
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(x, y, z);
@@ -281,11 +312,15 @@ export class CampRenderer3D {
       return mesh;
     };
     if (w.type === 'lake' || w.type === 'frozen') {
-      put(new THREE.Mesh(new THREE.CircleGeometry(1, 40), sandMat), w.cx, w.cy, 0.4)
-        .scale.set(w.rx * 1.12, w.ry * 1.12, 1);
-      const surface = put(new THREE.Mesh(new THREE.CircleGeometry(1, 40),
-        w.type === 'frozen' ? new THREE.MeshLambertMaterial({ color: hex(w.colors[0]) }) : mat), w.cx, w.cy, 0.8);
-      surface.scale.set(w.rx, w.ry, 1);
+      put(new THREE.Mesh(new THREE.CircleGeometry(1, 48), sandMat), w.cx, w.cy, 0.4)
+        .scale.set(w.rx * 1.14, w.ry * 1.14, 1);
+      put(new THREE.Mesh(new THREE.CircleGeometry(1, 48), foamMat), w.cx, w.cy, 0.6)
+        .scale.set(w.rx * 1.04, w.ry * 1.04, 1);
+      put(new THREE.Mesh(new THREE.CircleGeometry(1, 48), shallowMat), w.cx, w.cy, 0.7)
+        .scale.set(w.rx, w.ry, 1);
+      const surface = put(new THREE.Mesh(new THREE.CircleGeometry(1, 48),
+        w.type === 'frozen' ? new THREE.MeshLambertMaterial({ color: hex(c.water[0]) }) : mat), w.cx, w.cy, 0.85);
+      surface.scale.set(w.rx * 0.88, w.ry * 0.86, 1);
       if (w.type === 'frozen') {
         const holeMat = new THREE.MeshBasicMaterial({ color: 0x0e2f44 });
         for (const h of w.holes) put(new THREE.Mesh(new THREE.CircleGeometry(h.r, 16), holeMat), h.x, h.y, 1.1);
@@ -310,7 +345,9 @@ export class CampRenderer3D {
       put(new THREE.Mesh(new THREE.ShapeGeometry(shape), mat), 0, 0, 0.8);
     } else if (w.type === 'ocean') {
       put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 1400, 40, 16), sandMat), 1000, w.base + 200, 0.4);
-      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 2600, 40, 26), mat), 1000, w.base + 1300, 0.8);
+      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 60, 40, 2), foamMat), 1000, w.base + 30, 0.6);
+      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 260, 40, 6), shallowMat), 1000, w.base + 180, 0.7);
+      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 2600, 40, 26), mat), 1000, w.base + 1500, 0.85);
     }
   }
 
@@ -376,6 +413,7 @@ export class CampRenderer3D {
         g.add(blob);
       }
     }
+    g.add(this.blobShadow(t.r * 1.25));
     g.position.set(t.x, 0, t.y);
     g.rotation.y = (t.x + t.y) * 0.01; // vary them so the copies don't read as clones
     root.add(g);
@@ -398,6 +436,7 @@ export class CampRenderer3D {
     door.rotation.y = Math.PI / 4;
     door.position.set(0, t.h * 0.3, t.h * 0.42);
     g.add(door);
+    g.add(this.blobShadow(t.w * 0.62));
     g.position.set(t.x + t.w / 2, 0, t.y + t.h / 2);
     root.add(g);
   }
@@ -429,7 +468,7 @@ export class CampRenderer3D {
       fl.position.set((i - 1) * 8, 24 - i * 4, 0);
       this.flames.add(fl);
     }
-    g.add(this.flames);
+    g.add(this.flames, this.blobShadow(f.r * 1.5));
     g.position.set(f.x, 0, f.y);
     root.add(g);
     this.firepitPos = { x: f.x, y: f.y };
@@ -458,6 +497,7 @@ export class CampRenderer3D {
       post.position.set(sx, 48, -40);
       g.add(post);
     }
+    g.add(this.blobShadow(M.w * 0.72));
     g.position.set(M.x + M.w / 2, 0, M.y + M.h / 2);
     root.add(g);
   }
@@ -610,46 +650,55 @@ export class CampRenderer3D {
   playerNode(p) {
     let n = this.playerNodes.get(p.name);
     if (n) return n;
-    // chibi proportions: little round body, oversized head
+    // villager proportions: tiny round body, ENORMOUS head
     const group = new THREE.Group();
-    const skin = new THREE.Color().setHSL(p.hue / 360, 0.62, 0.58);
+    const shirt = new THREE.Color().setHSL(p.hue / 360, 0.78, 0.62);
+    const limb = new THREE.Color().setHSL(p.hue / 360, 0.7, 0.7);
     const body = new THREE.Mesh(
-      new THREE.SphereGeometry(17, 12, 10),
-      new THREE.MeshLambertMaterial({ color: skin, flatShading: false }),
+      new THREE.SphereGeometry(19, 14, 12),
+      new THREE.MeshLambertMaterial({ color: shirt }),
     );
-    body.scale.set(1, 0.92, 0.9);
-    body.position.y = 24;
+    body.scale.set(1, 0.86, 0.88);
+    body.position.y = 26;
     body.castShadow = this.q.shadows;
-    const feetMat = new THREE.MeshLambertMaterial({ color: 0x50415e });
+    const limbMat = new THREE.MeshLambertMaterial({ color: limb });
+    const arms = [-1, 1].map((s) => {
+      const a = new THREE.Mesh(new THREE.SphereGeometry(6.5, 8, 6), limbMat);
+      a.scale.set(0.85, 1.5, 0.85);
+      a.position.set(s * 19, 28, 0);
+      return a;
+    });
+    const feetMat = new THREE.MeshLambertMaterial({ color: 0x4b3f63 });
     const feet = [-1, 1].map((s) => {
-      const f = new THREE.Mesh(new THREE.SphereGeometry(6.5, 8, 6), feetMat);
-      f.scale.set(1, 0.7, 1.3);
-      f.position.set(s * 8, 6, 0);
+      const f = new THREE.Mesh(new THREE.SphereGeometry(7.5, 8, 6), feetMat);
+      f.scale.set(1, 0.62, 1.35);
+      f.position.set(s * 9, 5, 1);
       return f;
     });
+    // the head is the character — big enough to read your face across the camp
     const tex = p.head ? new THREE.CanvasTexture(p.head) : null;
     const head = new THREE.Mesh(
-      new THREE.CircleGeometry(27, 24),
-      tex ? new THREE.MeshBasicMaterial({ map: tex })
-        : new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.4, 0.35) }),
+      new THREE.CircleGeometry(38, 28),
+      tex ? new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+        : new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.45, 0.4) }),
     );
-    head.position.y = 62;
-    // a soft hair-coloured sphere behind the face plate gives the head volume
+    head.position.y = 76;
     const skull = new THREE.Mesh(
-      new THREE.SphereGeometry(26, 14, 12),
-      new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.5, 0.36) }),
+      new THREE.SphereGeometry(37, 18, 16),
+      new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.55, 0.42) }),
     );
-    skull.position.y = 62;
-    skull.scale.z = 0.75;
+    skull.position.y = 76;
+    skull.scale.z = 0.7;
     skull.castShadow = this.q.shadows;
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 66, 5),
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 76, 5),
       new THREE.MeshLambertMaterial({ color: 0xcaa96d }));
-    rod.position.set(18, 52, 0);
+    rod.position.set(24, 54, 0);
     rod.rotation.z = -0.8;
     rod.visible = false;
-    group.add(body, ...feet, skull, head, rod);
+    const shadow = this.blobShadow(34);
+    group.add(shadow, body, ...arms, ...feet, skull, head, rod);
     this.dynamicRoot.add(group);
-    n = { group, head, skull, tex, body, feet, rod };
+    n = { group, head, skull, tex, body, feet, arms, rod, shadow };
     this.playerNodes.set(p.name, n);
     return n;
   }
@@ -662,8 +711,13 @@ export class CampRenderer3D {
 
     // --- camera: third-person, behind and above
     if (focus) {
-      this.camGoal.set(focus.x - 210, 330, focus.y + 340);
-      this.camLook.set(focus.x, 46, focus.y);
+      // close and low: the campers should dominate the frame the way
+      // villagers do, not sit in a distant diorama
+      // tuned so a camper stands ~45% of the frame — villager-sized, the way
+      // the reference art reads
+      const far = truckView && me?.driving ? 1.9 : 1;
+      this.camGoal.set(focus.x - 184 * far, 268 * far, focus.y + 314 * far);
+      this.camLook.set(focus.x, 62, focus.y);
     }
     this.camera.position.lerp(this.camGoal, 0.1);
     this.camera.lookAt(this.camLook);
@@ -710,10 +764,15 @@ export class CampRenderer3D {
       const idle = p.m ? 0 : Math.sin(now / 700) * 1.4; // breathing while still
       n.group.position.set(p.x, (p.sit ? -10 : 0) + hop * 6, p.y);
       n.group.rotation.z = p.m ? Math.sin(now / 210) * 0.06 : 0;
-      n.body.scale.set(1 / squash, 0.92 * squash, 0.9 / squash);
-      n.body.position.y = (p.sit ? 18 : 24) + idle;
-      n.feet.forEach((f, i) => { f.position.y = 6 + (p.m ? Math.max(0, Math.sin(now / 105 + i * Math.PI)) * 7 : 0); });
-      const headY = (p.sit ? 54 : 62) + idle + hop * 1.5;
+      n.body.scale.set(1 / squash, 0.86 * squash, 0.88 / squash);
+      n.body.position.y = (p.sit ? 20 : 26) + idle;
+      n.feet.forEach((f, i) => { f.position.y = 5 + (p.m ? Math.max(0, Math.sin(now / 105 + i * Math.PI)) * 8 : 0); });
+      n.arms.forEach((a, i) => {
+        a.position.y = (p.sit ? 22 : 28) + idle;
+        a.rotation.x = p.m ? Math.sin(now / 105 + i * Math.PI) * 0.8 : 0.1;
+      });
+      if (n.shadow) { n.shadow.position.y = 1.2 - (p.sit ? -10 : 0) - hop * 6; n.shadow.scale.setScalar(1 - hop * 0.16); }
+      const headY = (p.sit ? 66 : 76) + idle + hop * 1.5;
       n.head.position.y = headY;
       n.skull.position.y = headY;
       n.head.quaternion.copy(this.camera.quaternion);
@@ -814,20 +873,48 @@ export class CampRenderer3D {
 
   // ---------------------------------------------------------------- picking
 
+  /** Project a ground point through the SAME curve the vertex shader applies —
+   *  without this, picking and projection drift badly with distance. */
+  projectBent(x, z) {
+    const v = new THREE.Vector3(x, 0, z).applyMatrix4(this.camera.matrixWorldInverse);
+    v.y -= (v.x * v.x + v.z * v.z) * this.q.bend;
+    v.applyMatrix4(this.camera.projectionMatrix); // includes the perspective divide
+    return v;
+  }
+
   worldToScreen(x, y) {
-    const v = new THREE.Vector3(x, 0, y).project(this.camera);
+    const v = this.projectBent(x, y);
     return {
       x: (v.x * 0.5 + 0.5) * this.canvas.width,
       y: (-v.y * 0.5 + 0.5) * this.canvas.height,
     };
   }
 
+  /** Inverse of the above: walk along the pick ray until the curved ground
+   *  lands on the tapped pixel. */
   screenToWorld(sx, sy) {
     const ndc = new THREE.Vector2((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const hit = new THREE.Vector3();
-    this.raycaster.ray.intersectPlane(this.groundPlane, hit);
-    return hit ? { x: hit.x, y: hit.z } : { x: 0, y: 0 };
+    const ray = this.raycaster.ray;
+    const p = new THREE.Vector3();
+    const screenY = (t) => { ray.at(t, p); return this.projectBent(p.x, p.z).y; };
+    // The curve gives the world a horizon: screen-Y rises to a peak and then
+    // falls again, so bisect only on the near side of that peak.
+    let a = 1, b = 8000;
+    for (let i = 0; i < 40; i++) {
+      const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
+      if (screenY(m1) < screenY(m2)) a = m1; else b = m2;
+    }
+    const horizon = (a + b) / 2;
+    // ndc.y climbs from the bottom of the screen toward the horizon, so a
+    // sample below the target means we must look further out
+    let lo = 1, hi = horizon;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (screenY(mid) < ndc.y) lo = mid; else hi = mid;
+    }
+    ray.at((lo + hi) / 2, p);
+    return { x: p.x, y: p.z };
   }
 
   /** Debug: scene stats for headless assertions. */
