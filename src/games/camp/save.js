@@ -22,7 +22,7 @@ async function ensureFirestore() {
 
 export function emptyCampsite() {
   return {
-    name: 'Our camp', points: 0,
+    name: 'Our camp', points: 0, xp: 0, spot: 'lakeside',
     fire: { streak: 0, lastLitDay: null },
     bestCatches: {}, constellations: {}, decor: [], unlocked: [], members: {},
   };

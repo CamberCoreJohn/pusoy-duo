@@ -5,6 +5,7 @@
 export const FEED_AMOUNT = 20;
 export const STRIKE_LIGHT_LVL = 35;
 const CHOP_COOLDOWN_MS = 2500;
+const AXE_COOLDOWN_MS = 1200;
 
 export class FireActions {
   /**
@@ -36,12 +37,14 @@ export class FireActions {
   }
 
   chop() {
+    const hasAxe = this.hooks.hasGear?.('axe');
     const now = Date.now();
-    if (now - this.lastChop < CHOP_COOLDOWN_MS) return;
+    if (now - this.lastChop < (hasAxe ? AXE_COOLDOWN_MS : CHOP_COOLDOWN_MS)) return;
     this.lastChop = now;
-    this.wood += 1 + (Math.random() < 0.3 ? 1 : 0);
+    const bonus = (this.hooks.mapWoodBonus?.() || 0) + (hasAxe ? 1 : 0);
+    this.wood += 1 + bonus + (Math.random() < 0.3 ? 1 : 0);
     this.hooks.onWood(this.wood);
-    this.hooks.toast(`+ wood 🪵 (${this.wood})`, 1200, 'info');
+    this.hooks.toast(`${hasAxe ? '🪓' : ''}+ wood 🪵 (${this.wood})`, 1200, 'info');
   }
 
   /** Action pressed near the firepit — routes by the same priority as the label. */

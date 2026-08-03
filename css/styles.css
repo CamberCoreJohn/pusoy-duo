@@ -651,6 +651,43 @@ button.action:disabled { opacity: 0.3; cursor: default; }
 .star-view { position: absolute; inset: 0; z-index: 9; }
 .star-view canvas { position: absolute; inset: 0; touch-action: none; }
 
+.xp-float {
+  position: absolute; top: calc(58px + var(--sat));
+  transform: translateX(-50%); pointer-events: none; z-index: 9;
+  font-weight: 800; color: #a7f3d0; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+  animation: xpFloat 1.5s ease-out both;
+}
+@keyframes xpFloat {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.8); }
+  20% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+  100% { opacity: 0; transform: translate(-50%, -46px) scale(1); }
+}
+
+.travel-modal { left: 50%; right: auto; top: 50%; transform: translate(-50%, -50%); }
+
+.travel-transition {
+  position: absolute; inset: 0; z-index: 30;
+  background: linear-gradient(180deg, #101b33 0%, #23324e 55%, #3a3a44 55.5%, #2c2c34 100%);
+  overflow: hidden;
+}
+.travel-road {
+  position: absolute; left: 0; right: 0; top: 62%; height: 8px;
+  background: repeating-linear-gradient(90deg, #e8d27a 0 60px, transparent 60px 120px);
+  animation: roadScroll 0.5s linear infinite;
+}
+@keyframes roadScroll { to { transform: translateX(-120px); } }
+.travel-truck {
+  position: absolute; left: 38%; top: 54%; font-size: 4.4rem;
+  transform: scaleX(-1);
+  animation: truckBob 0.4s ease-in-out infinite alternate;
+}
+@keyframes truckBob { from { transform: scaleX(-1) translateY(0); } to { transform: scaleX(-1) translateY(-7px); } }
+.travel-dest {
+  position: absolute; left: 50%; top: 30%; transform: translateX(-50%);
+  font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
 /* ---------- phones (portrait) ---------- */
 @media (max-width: 700px) and (orientation: portrait) {
   :root { --card-w: clamp(44px, 12vw, 60px); }

@@ -11,34 +11,41 @@ export const SHOP = [
   { item: 'flag', name: 'Camp Flag', emoji: '🚩', cost: 8 },
 ];
 
-// One-time equipment unlocks (not placeable): gear effects + the truck.
+// One-time equipment unlocks (not placeable). minLevel gates by Camp Level.
 export const EQUIPMENT = [
-  { item: 'rod2', name: 'Pro Rod', emoji: '🎣', cost: 60, desc: 'wider reel zone' },
-  { item: 'lure', name: 'Lucky Lure', emoji: '✨', cost: 45, desc: 'better bites' },
-  { item: 'truck', name: 'Truck + Rooftop Tent', emoji: '🛻', cost: 250, desc: 'parks by the tent' },
+  { item: 'rod2', name: 'Pro Rod', emoji: '🎣', cost: 60, minLevel: 1, desc: 'wider reel zone' },
+  { item: 'lure', name: 'Lucky Lure', emoji: '✨', cost: 45, minLevel: 1, desc: 'better bites' },
+  { item: 'axe', name: 'Camp Axe', emoji: '🪓', cost: 80, minLevel: 3, desc: 'chop faster, +1 wood' },
+  { item: 'cooler', name: 'Cooler', emoji: '🧊', cost: 100, minLevel: 3, desc: 'fish sell +20%' },
+  { item: 'truck', name: 'Truck + Rooftop Tent', emoji: '🛻', cost: 250, minLevel: 5, desc: 'drive to new camps!' },
+  { item: 'telescope', name: 'Telescope', emoji: '🔭', cost: 120, minLevel: 5, desc: 'star XP ×1.5' },
+  { item: 'bbq', name: 'BBQ Grill', emoji: '♨️', cost: 150, minLevel: 5, desc: 'feasts pay coins' },
+  { item: 'auger', name: 'Ice Auger', emoji: '🕳️', cost: 200, minLevel: 8, desc: 'ice fishing up north' },
+  { item: 'heater', name: 'Camp Heater', emoji: '🔥', cost: 180, minLevel: 8, desc: 'fire lasts in the cold' },
 ];
 
 export const shopItem = (id) => SHOP.find((s) => s.item === id);
 export const equipItem = (id) => EQUIPMENT.find((s) => s.item === id);
 
 /** Host-side validation of an equipment purchase. */
-export function canBuy(campData, item) {
+export function canBuy(campData, item, level = 1) {
   const e = equipItem(item);
   if (!e) return { ok: false, reason: 'Unknown equipment' };
   if (campData.unlocked.includes(item)) return { ok: false, reason: 'Already owned' };
+  if (level < e.minLevel) return { ok: false, reason: `Needs Camp Level ${e.minLevel}` };
   if (campData.points < e.cost) return { ok: false, reason: 'Not enough coins' };
   return { ok: true, cost: e.cost };
 }
 
 export const MAX_DECOR = 60;
 
-/** Host-side validation of a placement request. */
-export function canPlace(campData, item, x, y) {
+/** Host-side validation of a placement request (map-aware). */
+export function canPlace(campData, item, x, y, map) {
   const s = shopItem(item);
   if (!s) return { ok: false, reason: 'Unknown item' };
-  if (campData.points < s.cost) return { ok: false, reason: 'Not enough camp points' };
+  if (campData.points < s.cost) return { ok: false, reason: 'Not enough coins' };
   if (campData.decor.length >= MAX_DECOR) return { ok: false, reason: 'Camp is full!' };
-  if (collides(x, y)) return { ok: false, reason: 'Cannot place there' };
+  if (map && collides(map, x, y)) return { ok: false, reason: 'Cannot place there' };
   return { ok: true };
 }
 

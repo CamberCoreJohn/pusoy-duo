@@ -49,9 +49,19 @@ MARKET at the trading post, STARGAZE at the tent after dark (10-minute
 day/night cycle). Fishing = hold-to-cast power, tap the bite (1.6s window),
 keep the reel needle in the zone (snapping takes sustained neglect, not one
 slip); rarities up to the Arowana 🐉 (and the Old Boot). Catches fill your
-creel — grill them for a feast or **sell them at the market** for coins 🪙,
-then buy equipment: the Pro Rod (wider reel zone), Lucky Lure (better
-bites), or the Truck + Rooftop Tent 🛻 that parks itself by your tent. The campsite **persists**: fish log
+creel — grill them for a feast or **sell them at the market** for coins 🪙.
+
+**Camp Level** (shared): everything you do earns XP (+floaters, level-up
+confetti). Levels gate gear tiers and camping spots. **Equipment**: Pro Rod,
+Lucky Lure → Lv3: Camp Axe, Cooler → Lv5: Truck 🛻, Telescope, BBQ →
+Lv8: Ice Auger, Camp Heater. **The truck is drivable**: hop in (partner
+rides shotgun with their video face in the window — passenger button is
+HONK 📯), drive to the road sign, and travel together (everyone aboard) to
+themed spots, each with its own waters and fish: Lakeside → Pine Forest 🌲
+(river, fireflies, Lv3) → Sunset Beach 🏖️ (ocean, orange dusks, Lv5) →
+Snowy Summit 🏔️ (ice-hole fishing via Auger, snowfall, aurora nights,
+fire burns faster, Lv8). The camp remembers which spot you're parked at,
+and decor is per-spot. The campsite **persists**: fish log
 + records, campfire streak, traced constellations, camp points, and placed
 decorations live in Firestore under `campsites/{hostUid}` (host is the
 authority and sole writer; localStorage fallback for signed-out play). The

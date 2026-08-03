@@ -4,28 +4,61 @@
 // they feel instant. This module owns the local player's fishing state and
 // the DOM overlays (#castMeter, #reelGame, #catchCard).
 
-import { LAKE } from './world.js';
 
-export const SPECIES = [
-  { id: 'tilapia', name: 'Tilapia', emoji: '🐟', w: 30, min: 15, max: 35, rarity: 'common', pts: 2 },
-  { id: 'bangus', name: 'Bangus', emoji: '🐟', w: 24, min: 25, max: 50, rarity: 'common', pts: 3 },
-  { id: 'catfish', name: 'Catfish', emoji: '🐡', w: 16, min: 30, max: 70, rarity: 'uncommon', pts: 5 },
-  { id: 'bass', name: 'Bass', emoji: '🎣', w: 12, min: 25, max: 60, rarity: 'uncommon', pts: 5 },
-  { id: 'carp', name: 'Golden Carp', emoji: '🟡', w: 8, min: 40, max: 85, rarity: 'rare', pts: 12 },
-  { id: 'eel', name: 'Midnight Eel', emoji: '🐍', w: 6, min: 50, max: 110, rarity: 'rare', pts: 12 },
-  { id: 'arowana', name: 'Arowana', emoji: '🐉', w: 3, min: 60, max: 120, rarity: 'epic', pts: 30 },
-  { id: 'boot', name: 'Old Boot', emoji: '🥾', w: 5, min: 20, max: 30, rarity: 'junk', pts: 1 },
-];
+const BOOT = { id: 'boot', name: 'Old Boot', emoji: '🥾', w: 5, min: 20, max: 30, rarity: 'junk', pts: 1 };
+
+// Every camping spot has its own waters. Higher-tier spots pay better.
+export const SPECIES_BY_MAP = {
+  lakeside: [
+    { id: 'tilapia', name: 'Tilapia', emoji: '🐟', w: 30, min: 15, max: 35, rarity: 'common', pts: 2 },
+    { id: 'bangus', name: 'Bangus', emoji: '🐟', w: 24, min: 25, max: 50, rarity: 'common', pts: 3 },
+    { id: 'catfish', name: 'Catfish', emoji: '🐡', w: 16, min: 30, max: 70, rarity: 'uncommon', pts: 5 },
+    { id: 'bass', name: 'Bass', emoji: '🎣', w: 12, min: 25, max: 60, rarity: 'uncommon', pts: 5 },
+    { id: 'carp', name: 'Golden Carp', emoji: '🟡', w: 8, min: 40, max: 85, rarity: 'rare', pts: 12 },
+    { id: 'eel', name: 'Midnight Eel', emoji: '🐍', w: 6, min: 50, max: 110, rarity: 'rare', pts: 12 },
+    { id: 'arowana', name: 'Arowana', emoji: '🐉', w: 3, min: 60, max: 120, rarity: 'epic', pts: 30 },
+    BOOT,
+  ],
+  forest: [
+    { id: 'perch', name: 'River Perch', emoji: '🐟', w: 28, min: 15, max: 35, rarity: 'common', pts: 4 },
+    { id: 'salmon', name: 'Salmon', emoji: '🐟', w: 24, min: 40, max: 80, rarity: 'common', pts: 5 },
+    { id: 'koi', name: 'Wild Koi', emoji: '🎏', w: 15, min: 25, max: 55, rarity: 'uncommon', pts: 9 },
+    { id: 'sturgeon', name: 'Sturgeon', emoji: '🦕', w: 8, min: 80, max: 160, rarity: 'rare', pts: 18 },
+    { id: 'dorado', name: 'Golden Dorado', emoji: '🌟', w: 3, min: 60, max: 110, rarity: 'epic', pts: 45 },
+    BOOT,
+  ],
+  beach: [
+    { id: 'sardine', name: 'Sardine', emoji: '🐟', w: 28, min: 10, max: 25, rarity: 'common', pts: 4 },
+    { id: 'crab', name: 'Beach Crab', emoji: '🦀', w: 22, min: 12, max: 30, rarity: 'common', pts: 5 },
+    { id: 'mackerel', name: 'Mackerel', emoji: '🐟', w: 15, min: 30, max: 60, rarity: 'uncommon', pts: 10 },
+    { id: 'puffer', name: 'Pufferfish', emoji: '🐡', w: 12, min: 20, max: 50, rarity: 'uncommon', pts: 11 },
+    { id: 'ray', name: 'Sunset Ray', emoji: '🪁', w: 7, min: 60, max: 130, rarity: 'rare', pts: 22 },
+    { id: 'marlin', name: 'Blue Marlin', emoji: '🗡️', w: 3, min: 150, max: 300, rarity: 'epic', pts: 50 },
+    BOOT,
+  ],
+  mountain: [
+    { id: 'icefish', name: 'Icefish', emoji: '🧊', w: 28, min: 12, max: 30, rarity: 'common', pts: 6 },
+    { id: 'trout', name: 'Frost Trout', emoji: '🐟', w: 24, min: 25, max: 60, rarity: 'common', pts: 7 },
+    { id: 'char', name: 'Arctic Char', emoji: '🐟', w: 14, min: 35, max: 75, rarity: 'uncommon', pts: 13 },
+    { id: 'ghostkoi', name: 'Ghost Koi', emoji: '👻', w: 7, min: 40, max: 90, rarity: 'rare', pts: 26 },
+    { id: 'auroratrout', name: 'Aurora Trout', emoji: '✨', w: 3, min: 70, max: 140, rarity: 'epic', pts: 60 },
+    BOOT,
+  ],
+};
+
+export const SPECIES = Object.values(SPECIES_BY_MAP).flat()
+  .filter((s, i, a) => a.findIndex((x) => x.id === s.id) === i);
 
 const FIGHT = { common: 1, uncommon: 1.35, rare: 1.8, epic: 2.4, junk: 0.6 };
 
-/** Host-side roll. rand injectable; lucky lure rerolls junk/common once. */
-export function rollFish(rand = Math.random, { lucky = false } = {}) {
+/** Host-side roll from the current map's waters. Lucky lure rerolls junk/common. */
+export function rollFish(rand = Math.random, { lucky = false, mapId = 'lakeside' } = {}) {
+  const pool = SPECIES_BY_MAP[mapId] || SPECIES_BY_MAP.lakeside;
   const pick = () => {
-    const total = SPECIES.reduce((s, f) => s + f.w, 0);
+    const total = pool.reduce((s, f) => s + f.w, 0);
     let r = rand() * total;
-    for (const f of SPECIES) { r -= f.w; if (r <= 0) return f; }
-    return SPECIES[0];
+    for (const f of pool) { r -= f.w; if (r <= 0) return f; }
+    return pool[0];
   };
   let sp = pick();
   if (lucky && (sp.rarity === 'junk' || sp.rarity === 'common') && rand() < 0.5) sp = pick();
@@ -108,10 +141,12 @@ export class Fishing {
   _releaseCast() {
     clearInterval(this.castAnim);
     this.els.castMeter.classList.add('hidden');
-    // bobber lands in the lake along the shore->center direction, distance by power
-    const dx = LAKE.cx - this.playerPos.x, dy = LAKE.cy - this.playerPos.y;
+    // bobber flies toward the water (map decides where that is), distance by
+    // power, never past the target (so ice holes catch the bobber)
+    const target = this.hooks.waterTarget?.(this.playerPos) || { x: this.playerPos.x, y: this.playerPos.y + 200 };
+    const dx = target.x - this.playerPos.x, dy = target.y - this.playerPos.y;
     const len = Math.hypot(dx, dy) || 1;
-    const dist = 90 + this.castPower * 200;
+    const dist = Math.min(90 + this.castPower * 200, len);
     this.bobber = { x: this.playerPos.x + (dx / len) * dist, y: this.playerPos.y + (dy / len) * dist };
     this.state = 'waiting';
     this.hooks.setPrompt('…');
