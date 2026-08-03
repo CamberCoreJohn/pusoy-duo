@@ -360,6 +360,8 @@ function newParty() {
     peers.set(peerId, { name: 'Someone' });
     const others = [...peers.keys()].filter((id) => id !== peerId);
     party.send('peers', { ids: others }, peerId);
+    // joined while camp is running: pull them straight into the world
+    if (campActive) party.send('game-start', { game: 'camp' }, peerId);
     broadcastRoster();
   };
 
@@ -433,7 +435,8 @@ function updateRoster(names) {
 els.btnCall.onclick = async () => {
   try {
     els.homeStatus.textContent = 'Starting camera…';
-    await getCamera();
+    const cam = await getCamera({ required: false });
+    if (!cam) showToast('No camera — calling without video', 3000, 'info');
     els.homeStatus.textContent = 'Creating call…';
     newParty();
     const code = await party.host(localStream);

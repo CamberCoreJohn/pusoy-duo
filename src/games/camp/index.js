@@ -57,7 +57,8 @@ export function createCamp(ctx) {
   let traveling = false;
 
   const toast = ctx.showToast;
-  const myId = () => (isHost ? 'host' : 'me');
+  let wireId = null; // how the host addresses me on the wire (guests learn it via init)
+  const myId = () => (isHost ? 'host' : wireId || 'me');
 
   // ------------------------------------------------------------ helpers
 
@@ -487,6 +488,7 @@ export function createCamp(ctx) {
       addPlayer(fromPeer, msg.name || 'Camper', hue, spawn.x, spawn.y);
       net.send({
         t: 'init',
+        yourId: fromPeer,
         spot: map.id,
         world: { fire: world.fire, tod: world.tod },
         decor: save.data.decor,
@@ -506,6 +508,7 @@ export function createCamp(ctx) {
 
     net.on('init', (msg) => {
       if (isHost) return;
+      wireId = msg.yourId || null;
       guestSpot = msg.spot || 'lakeside';
       map = getMap(guestSpot);
       world = { ...makeWorldState(), ...msg.world };
@@ -728,6 +731,12 @@ export function createCamp(ctx) {
 
     me = addPlayer('me', ctx.user()?.name || 'You', 20, map.spawns[0].x, map.spawns[0].y);
 
+    // Wire the network BEFORE anything sends: the guest's 'hi' handshake was
+    // once sent pre-attach and vanished — the two players ended up in
+    // separate worlds.
+    wireNet();
+    if (!soloMode) net.attach(ctx.party(), isHost);
+
     save = new CampSave(isHost ? (ctx.user()?.uid ?? null) : null);
     if (isHost) {
       save.load().then(() => {
@@ -748,9 +757,6 @@ export function createCamp(ctx) {
     } else {
       net.send({ t: 'hi', name: ctx.user()?.name || 'Camper' });
     }
-
-    wireNet();
-    if (!soloMode) net.attach(ctx.party(), isHost);
 
     input.onActionDown = () => {
       if (stars.open || traveling) return;
@@ -824,6 +830,7 @@ export function createCamp(ctx) {
   function stop(reason, fromRemote = false) {
     if (!active) return;
     active = false;
+    wireId = null;
     cancelAnimationFrame(rafId);
     clearInterval(hostTick);
     document.removeEventListener('visibilitychange', onVis);
