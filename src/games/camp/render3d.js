@@ -6,19 +6,56 @@
 // Flat-shaded lambert materials give the cozy Animal-Crossing-ish look
 // cheaply enough to run beside a live video call.
 
-import { nightFactor } from './world.js';
+import { nightFactor, collides } from './world.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
 
 let THREE = null;
 
 const TIER = {
-  low: { shadows: false, treeSeg: 5, pixelRatio: 1, particles: 0 },
-  med: { shadows: false, treeSeg: 6, pixelRatio: 1.25, particles: 40 },
-  high: { shadows: true, treeSeg: 8, pixelRatio: 1.5, particles: 80 },
+  low: { shadows: false, treeSeg: 6, pixelRatio: 1, flora: 0, bend: 0.00016 },
+  med: { shadows: false, treeSeg: 8, pixelRatio: 1.25, flora: 90, bend: 0.00016 },
+  high: { shadows: true, treeSeg: 10, pixelRatio: 1.5, flora: 190, bend: 0.00016 },
 };
 
 const hex = (s) => new THREE.Color(s);
+
+// Sweeter, higher-key palette than the 2D map data — the flat top-down view
+// wanted contrast, the 3D one wants sunshine.
+const CUTE = {
+  lakeside: { grass: '#6fc25a', trunk: '#a9713f', canopy: ['#4fae4a', '#79cf5c'], water: ['#57c6e8', '#2f9ad0'], sand: '#f3e2a9', path: '#d9b378' },
+  forest: { grass: '#57ab55', trunk: '#8e5f38', canopy: ['#3f9a4c', '#68c065'], water: ['#57c6e8', '#2f9ad0'], sand: '#e0cf9a', path: '#c9a877' },
+  beach: { grass: '#f4e3ae', trunk: '#b0763f', canopy: ['#57b552', '#7fd06a'], water: ['#4fd0e8', '#1f9fc9'], sand: '#fdf2cd', path: '#e3c88e' },
+  mountain: { grass: '#eef5fb', trunk: '#8a6247', canopy: ['#5e9c78', '#eaf3f8'], water: ['#bfe9f7', '#8fd2ea'], sand: '#f4fbff', path: '#cfd9e2' },
+};
+
+/**
+ * The Animal Crossing signature: bend the world down with distance so the
+ * ground curves away like a tiny planet. Patched into every material's
+ * vertex stage — geometry and physics stay perfectly flat.
+ */
+function bendMaterial(mat, strength) {
+  if (!mat || mat.__bent) return;
+  mat.__bent = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader) => {
+    prev?.(shader);
+    shader.uniforms.uBend = { value: strength };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uBend;')
+      .replace('#include <project_vertex>', `
+        vec4 mvPosition = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+        #endif
+        mvPosition = modelViewMatrix * mvPosition;
+        float bd = length( mvPosition.xz );
+        mvPosition.y -= bd * bd * uBend;
+        gl_Position = projectionMatrix * mvPosition;
+      `);
+  };
+  mat.needsUpdate = true;
+}
 
 export class CampRenderer3D {
   static async create(canvas, tier = 'med') {
@@ -37,16 +74,17 @@ export class CampRenderer3D {
     this.renderer.shadowMap.enabled = this.q.shadows;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x9fc4d8, 900, 2600);
-    this.camera = new THREE.PerspectiveCamera(52, 1, 1, 6000);
+    this.scene.fog = new THREE.Fog(0xbfe6f5, 1100, 2400);
+    // a tighter lens + closer camera makes everything read as a toy diorama
+    this.camera = new THREE.PerspectiveCamera(38, 1, 1, 6000);
     this.camGoal = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
 
     // lighting: hemisphere ambient + a sun that swings with the clock
-    // bright and cheerful: cozy games want an overexposed midday, not realism
-    this.hemi = new THREE.HemisphereLight(0xdcefff, 0x6b7d55, 1.55);
+    // bright and cheerful, but warm enough that greens stay green
+    this.hemi = new THREE.HemisphereLight(0xcbe6ff, 0x8f9a5e, 1.05);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff2d0, 1.5);
+    this.sun = new THREE.DirectionalLight(0xfff4dc, 1.35);
     this.sun.castShadow = this.q.shadows;
     if (this.q.shadows) {
       this.sun.shadow.mapSize.set(1024, 1024);
@@ -103,11 +141,18 @@ export class CampRenderer3D {
     this.unlocked = unlocked;
     const root = this.staticRoot;
     root.clear();
-    const P = map.palette;
+    const c = CUTE[map.id] || CUTE.lakeside;
+    // the 3D view uses the sweeter palette; 2D keeps the original map colors
+    const P = {
+      grassTop: c.grass, grassBottom: c.grass, path: c.path,
+      trunk: c.trunk, canopy: c.canopy,
+    };
+    this.cute = c;
 
-    // ground
+    // ground — heavily subdivided so the world-curve shader has vertices to
+    // bend; with 2 triangles the whole plane just tilts.
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(4000, 4000, 1, 1),
+      new THREE.PlaneGeometry(4600, 4600, 72, 72),
       new THREE.MeshLambertMaterial({ color: hex(P.grassTop) }),
     );
     ground.rotation.x = -Math.PI / 2;
@@ -133,6 +178,93 @@ export class CampRenderer3D {
       if (d.spot && d.spot !== map.id) continue;
       this.addDecor(root, d);
     }
+    this.addFlora(root, map, c);
+    this.addClouds();
+    this.addCritters();
+    this.bendAll();
+  }
+
+  /** Apply the world-curve to every material currently in the scene. */
+  bendAll() {
+    const s = this.q.bend;
+    this.scene.traverse((o) => {
+      if (!o.isMesh && !o.isInstancedMesh) return;
+      const m = o.material;
+      Array.isArray(m) ? m.forEach((x) => bendMaterial(x, s)) : bendMaterial(m, s);
+    });
+  }
+
+  /** Flower and grass-tuft confetti — cheap instanced meshes, deterministic. */
+  addFlora(root, map, c) {
+    const N = this.q.flora;
+    if (!N) return;
+    let seed = 1337;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const petals = ['#ff8fb8', '#ffd166', '#fff1f6', '#c79bff'];
+    const tuftGeo = new THREE.ConeGeometry(7, 22, 4);
+    const tuftMat = new THREE.MeshLambertMaterial({ color: hex(c.canopy[1]), flatShading: true });
+    const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, N);
+    const flowerGeo = new THREE.SphereGeometry(6.5, 6, 5);
+    const flowerMats = petals.map((p) => new THREE.MeshLambertMaterial({ color: hex(p) }));
+    const flowers = petals.map((_, i) => new THREE.InstancedMesh(flowerGeo, flowerMats[i], Math.ceil(N / 6)));
+    const counts = new Array(petals.length).fill(0);
+    const m4 = new THREE.Matrix4();
+    let placed = 0;
+    for (let i = 0; i < N * 5 && placed < N; i++) {
+      const x = rnd() * 2000, z = rnd() * 1500;
+      if (collides(map, x, z, 30)) continue;
+      m4.makeTranslation(x, 10, z);
+      tufts.setMatrixAt(placed, m4);
+      if (placed % 6 === 0) {
+        const k = placed % petals.length;
+        if (counts[k] < flowers[k].count) {
+          m4.makeTranslation(x + 12, 12, z + 8);
+          flowers[k].setMatrixAt(counts[k]++, m4);
+        }
+      }
+      placed++;
+    }
+    tufts.count = placed;
+    tufts.instanceMatrix.needsUpdate = true;
+    root.add(tufts);
+    flowers.forEach((f, i) => { f.count = counts[i]; f.instanceMatrix.needsUpdate = true; root.add(f); });
+  }
+
+  /** Puffy clouds drifting overhead. */
+  addClouds() {
+    this.clouds?.removeFromParent();
+    this.clouds = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    for (let i = 0; i < 7; i++) {
+      const puff = new THREE.Group();
+      for (let j = 0; j < 3; j++) {
+        const b = new THREE.Mesh(new THREE.SphereGeometry(46 + j * 9, 7, 6), mat);
+        b.position.set(j * 58 - 58, Math.sin(j) * 12, Math.sin(i + j) * 20);
+        b.scale.y = 0.62;
+        puff.add(b);
+      }
+      puff.position.set((i * 331) % 2000, 620 + (i % 3) * 60, (i * 517) % 1500);
+      this.clouds.add(puff);
+    }
+    this.scene.add(this.clouds);
+  }
+
+  /** A couple of butterflies bobbing around camp during the day. */
+  addCritters() {
+    this.critters?.removeFromParent();
+    this.critters = new THREE.Group();
+    const wingMat = new THREE.MeshLambertMaterial({ color: 0xfff1a8, side: THREE.DoubleSide });
+    for (let i = 0; i < 3; i++) {
+      const b = new THREE.Group();
+      for (const s of [-1, 1]) {
+        const w = new THREE.Mesh(new THREE.CircleGeometry(9, 6), wingMat);
+        w.position.x = s * 7;
+        b.add(w);
+      }
+      b.userData.seed = i * 2.3;
+      this.critters.add(b);
+    }
+    this.scene.add(this.critters);
   }
 
   addWater(root, map) {
@@ -177,8 +309,8 @@ export class CampRenderer3D {
       put(new THREE.Mesh(new THREE.ShapeGeometry(bankShape), sandMat), 0, 0, 0.4);
       put(new THREE.Mesh(new THREE.ShapeGeometry(shape), mat), 0, 0, 0.8);
     } else if (w.type === 'ocean') {
-      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 1400), sandMat), 1000, w.base + 200, 0.4);
-      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 1800), mat), 1000, w.base + 900, 0.8);
+      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 1400, 40, 16), sandMat), 1000, w.base + 200, 0.4);
+      put(new THREE.Mesh(new THREE.PlaneGeometry(4000, 2600, 40, 26), mat), 1000, w.base + 1300, 0.8);
     }
   }
 
@@ -214,21 +346,38 @@ export class CampRenderer3D {
         frond.rotation.set(-0.5, i * 1.05, 0.2);
         g.add(frond);
       }
-    } else {
+    } else if (features.snow || this.map?.id === 'forest') {
+      // conifers: soft rounded cones, snow-dusted up north
       const mat = new THREE.MeshLambertMaterial({ color: hex(P.canopy[0]), flatShading: true });
-      const mat2 = new THREE.MeshLambertMaterial({ color: hex(P.canopy[1]), flatShading: true });
-      // stacked cones read as conifers; the snowy palette caps them white
+      const cap = new THREE.MeshLambertMaterial({ color: hex(P.canopy[1]), flatShading: true });
       for (let i = 0; i < 3; i++) {
         const cone = new THREE.Mesh(
-          new THREE.ConeGeometry(t.r * (1 - i * 0.22), t.r * 1.15, this.q.treeSeg),
-          i === 2 ? mat2 : mat,
+          new THREE.SphereGeometry(t.r * (1 - i * 0.2), this.q.treeSeg, 6),
+          i === 2 ? cap : mat,
         );
-        cone.position.y = trunkH + i * t.r * 0.62;
+        cone.scale.y = 1.15;
+        cone.position.y = trunkH + i * t.r * 0.66;
         cone.castShadow = this.q.shadows;
         g.add(cone);
       }
+    } else {
+      // broadleaf: fat overlapping blobs — the Animal Crossing look
+      const mat = new THREE.MeshLambertMaterial({ color: hex(P.canopy[0]), flatShading: true });
+      const mat2 = new THREE.MeshLambertMaterial({ color: hex(P.canopy[1]), flatShading: true });
+      const blobs = [[0, 1.06, 0, 1], [-0.5, 0.72, 0.22, 0.66], [0.52, 0.8, -0.2, 0.6], [0.05, 0.5, -0.5, 0.55]];
+      for (const [bx, by, bz, s] of blobs) {
+        const blob = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(t.r * s, 1),
+          s > 0.9 ? mat : mat2,
+        );
+        blob.position.set(bx * t.r, trunkH + by * t.r, bz * t.r);
+        blob.scale.y = 0.88;
+        blob.castShadow = this.q.shadows;
+        g.add(blob);
+      }
     }
     g.position.set(t.x, 0, t.y);
+    g.rotation.y = (t.x + t.y) * 0.01; // vary them so the copies don't read as clones
     root.add(g);
   }
 
@@ -461,28 +610,46 @@ export class CampRenderer3D {
   playerNode(p) {
     let n = this.playerNodes.get(p.name);
     if (n) return n;
+    // chibi proportions: little round body, oversized head
     const group = new THREE.Group();
+    const skin = new THREE.Color().setHSL(p.hue / 360, 0.62, 0.58);
     const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(15, 22, 3, 8),
-      new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.45, 0.45), flatShading: true }),
+      new THREE.SphereGeometry(17, 12, 10),
+      new THREE.MeshLambertMaterial({ color: skin, flatShading: false }),
     );
-    body.position.y = 34;
+    body.scale.set(1, 0.92, 0.9);
+    body.position.y = 24;
     body.castShadow = this.q.shadows;
+    const feetMat = new THREE.MeshLambertMaterial({ color: 0x50415e });
+    const feet = [-1, 1].map((s) => {
+      const f = new THREE.Mesh(new THREE.SphereGeometry(6.5, 8, 6), feetMat);
+      f.scale.set(1, 0.7, 1.3);
+      f.position.set(s * 8, 6, 0);
+      return f;
+    });
     const tex = p.head ? new THREE.CanvasTexture(p.head) : null;
     const head = new THREE.Mesh(
-      new THREE.CircleGeometry(21, 20),
+      new THREE.CircleGeometry(27, 24),
       tex ? new THREE.MeshBasicMaterial({ map: tex })
-        : new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.4, 0.3) }),
+        : new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.4, 0.35) }),
     );
-    head.position.y = 74;
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 70, 4),
+    head.position.y = 62;
+    // a soft hair-coloured sphere behind the face plate gives the head volume
+    const skull = new THREE.Mesh(
+      new THREE.SphereGeometry(26, 14, 12),
+      new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(p.hue / 360, 0.5, 0.36) }),
+    );
+    skull.position.y = 62;
+    skull.scale.z = 0.75;
+    skull.castShadow = this.q.shadows;
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 66, 5),
       new THREE.MeshLambertMaterial({ color: 0xcaa96d }));
-    rod.position.set(16, 60, 0);
+    rod.position.set(18, 52, 0);
     rod.rotation.z = -0.8;
     rod.visible = false;
-    group.add(body, head, rod);
+    group.add(body, ...feet, skull, head, rod);
     this.dynamicRoot.add(group);
-    n = { group, head, tex, body, rod };
+    n = { group, head, skull, tex, body, feet, rod };
     this.playerNodes.set(p.name, n);
     return n;
   }
@@ -495,8 +662,8 @@ export class CampRenderer3D {
 
     // --- camera: third-person, behind and above
     if (focus) {
-      this.camGoal.set(focus.x - 300, 430, focus.y + 430);
-      this.camLook.set(focus.x, 40, focus.y);
+      this.camGoal.set(focus.x - 210, 330, focus.y + 340);
+      this.camLook.set(focus.x, 46, focus.y);
     }
     this.camera.position.lerp(this.camGoal, 0.1);
     this.camera.lookAt(this.camLook);
@@ -507,12 +674,12 @@ export class CampRenderer3D {
     this.sun.position.set(
       this.camLook.x + Math.cos(ang) * 1200, 400 + Math.sin(ang) * 900, this.camLook.z - 500);
     this.sun.target.position.copy(this.camLook);
-    this.sun.intensity = 1.5 * (1 - nf * 0.9);
+    this.sun.intensity = 1.35 * (1 - nf * 0.9);
     const warm = this.map.features.sunset && nf > 0.05 && nf < 0.75;
-    this.sun.color.setHex(warm ? 0xff9a4a : 0xfff2d0);
-    this.hemi.intensity = 1.55 - nf * 1.1;
-    this.hemi.color.setHex(nf > 0.6 ? 0x2a3a6a : 0xdcefff);
-    const skyDay = this.map.features.snow ? 0xcfe0ee : 0x9fc4d8;
+    this.sun.color.setHex(warm ? 0xff9a4a : 0xfff4dc);
+    this.hemi.intensity = 1.05 - nf * 0.72;
+    this.hemi.color.setHex(nf > 0.6 ? 0x2a3a6a : 0xcbe6ff);
+    const skyDay = this.map.features.snow ? 0xdff0fb : 0xbfe6f5;
     const sky = new THREE.Color(skyDay).lerp(new THREE.Color(0x080a22), nf);
     this.scene.background = sky;
     this.scene.fog.color = sky;
@@ -534,14 +701,23 @@ export class CampRenderer3D {
     for (const p of players) {
       if (p.hidden) { const n = this.playerNodes.get(p.name); if (n) n.group.visible = false; continue; }
       seen.add(p.name);
+      if (!this.playerNodes.has(p.name)) { this.playerNode(p); this.bendAll(); }
       const n = this.playerNode(p);
       n.group.visible = true;
-      n.group.position.set(p.x, p.sit ? -8 : 0, p.y);
-      // gentle waddle while walking; billboard the face at the camera
-      n.body.rotation.z = p.m ? Math.sin(now / 110) * 0.12 : 0;
-      n.body.position.y = p.sit ? 26 : 34;
-      n.head.position.y = p.sit ? 64 : 74;
+      // bouncy hop with squash-and-stretch — the whole trick to cute walking
+      const hop = p.m ? Math.abs(Math.sin(now / 105)) : 0;
+      const squash = p.m ? 1 + Math.sin(now / 105 + Math.PI) * 0.07 : 1;
+      const idle = p.m ? 0 : Math.sin(now / 700) * 1.4; // breathing while still
+      n.group.position.set(p.x, (p.sit ? -10 : 0) + hop * 6, p.y);
+      n.group.rotation.z = p.m ? Math.sin(now / 210) * 0.06 : 0;
+      n.body.scale.set(1 / squash, 0.92 * squash, 0.9 / squash);
+      n.body.position.y = (p.sit ? 18 : 24) + idle;
+      n.feet.forEach((f, i) => { f.position.y = 6 + (p.m ? Math.max(0, Math.sin(now / 105 + i * Math.PI)) * 7 : 0); });
+      const headY = (p.sit ? 54 : 62) + idle + hop * 1.5;
+      n.head.position.y = headY;
+      n.skull.position.y = headY;
       n.head.quaternion.copy(this.camera.quaternion);
+      n.skull.quaternion.copy(this.camera.quaternion);
       if (n.tex) n.tex.needsUpdate = true;
       n.rod.visible = !!p.fishing;
     }
@@ -558,6 +734,31 @@ export class CampRenderer3D {
       this.truckNode.rotation.y = truckView.dir > 0 ? 0 : Math.PI;
       if (this.truckBeam) this.truckBeam.material.opacity = this.headlights ? 0.22 * Math.max(nf, 0.3) : 0;
     } else if (this.truckNode) this.truckNode.visible = false;
+
+    // --- ambient life
+    if (this.clouds) {
+      this.clouds.children.forEach((c, i) => {
+        c.position.x = ((i * 331) + now / 90) % 2400 - 200;
+        c.visible = nf < 0.75;
+      });
+    }
+    if (this.critters) {
+      const day = nf < 0.4;
+      this.critters.visible = day;
+      if (day) {
+        this.critters.children.forEach((b) => {
+          const s = b.userData.seed;
+          b.position.set(
+            this.camLook.x + Math.sin(now / 1900 + s) * 220,
+            70 + Math.sin(now / 420 + s) * 26,
+            this.camLook.z + Math.cos(now / 1500 + s) * 200);
+          const flap = Math.sin(now / 70 + s) * 0.9;
+          b.children[0].rotation.y = flap;
+          b.children[1].rotation.y = -flap;
+          b.quaternion.setFromEuler(new THREE.Euler(0, now / 1900 + s, 0));
+        });
+      }
+    }
 
     // --- bobbers
     this.syncBobbers(players, now);
