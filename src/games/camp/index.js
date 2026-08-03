@@ -862,6 +862,11 @@ export function createCamp(ctx) {
         toast(`${name} left camp`, 2000, 'info');
       }
     },
+    /** A partner's media stream (re)connected: refresh camper faces so a
+     *  late-arriving video replaces the initial-letter head. */
+    onRemoteStreamChanged() {
+      if (active) syncAvatars();
+    },
     debug: {
       get world() { return world; },
       get map() { return map; },
@@ -879,6 +884,8 @@ export function createCamp(ctx) {
       tick(dt) { tickWorld(world, dt, map.features.fireDecayMult || 1); },
       frame(t) { render(t); },
       act,
+      pump(now) { const was = active; if (was) { frameFlip = true; loop(now); frameFlip = true; loop(now + 34); } },
+      net: () => net,
       input: () => input,
       fishing: () => fishing,
       fire: () => fireAct,

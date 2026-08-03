@@ -41,6 +41,11 @@ const els = [
 // hand of whichever seat is to act. For quick testing.
 const DEMO = new URLSearchParams(location.search).has('demo');
 
+// Bumped on every deploy (matches the ?v= on the script tag). Peers compare
+// builds on join: a stale cached client otherwise produces maddening
+// half-working sessions (e.g. the separate-worlds symptom).
+const BUILD = 'camp7';
+
 const AI_NAMES = ['Bot Nina', 'Bot Migs', 'Bot Cai'];
 const AI_DELAY_MS = [800, 1600];
 const MAX_HUMANS = 4;
@@ -350,6 +355,7 @@ function newParty() {
     v.srcObject = stream;
     layout();
     if (gameActive) buildTableSpots(); // a feed just became available for an avatar
+    camp?.onRemoteStreamChanged?.(); // camper faces refresh too
   };
 
   party.onPeerJoin = (peerId) => {
@@ -387,13 +393,21 @@ function newParty() {
 
   party.onOpen = () => {
     // guest: data channel to host ready
-    party.send('hello', { name: currentUser.name });
+    party.send('hello', { name: currentUser.name, build: BUILD });
     enterCall();
   };
 
-  party.on('hello', ({ name }, fromPeer) => {
+  party.on('hello', ({ name, build }, fromPeer) => {
     if (peers.has(fromPeer)) peers.get(fromPeer).name = name;
+    if (build !== BUILD) {
+      showToast('⚠️ App versions differ — you should BOTH force-refresh kritzzz.com', 7000);
+      party.send('stale', { hostBuild: BUILD }, fromPeer);
+    }
     broadcastRoster();
+  });
+
+  party.on('stale', () => {
+    showToast('⚠️ Your app is outdated — close the tab and reopen kritzzz.com', 8000);
   });
 
   party.on('roster', ({ names }) => updateRoster(names));
