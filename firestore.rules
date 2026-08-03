@@ -45,6 +45,17 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid in resource.data.users;
     }
 
+    // Campsites: the host's uid keys the shared camp; only the host writes
+    // (it is already the game authority). Catches grow forever -> subcollection.
+    match /campsites/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      match /catches/{id} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
     // Invites: sender creates a ring; sender or recipient updates its status.
     match /invites/{id} {
       allow read: if signedIn()

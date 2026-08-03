@@ -18,6 +18,8 @@ import { initAuth, authAvailable, register, signIn, signOutUser, continueAsGuest
 import { initSocial, stopSocial, myCode, addFriendByCode, respondRequest, sendInvite, answerInvite, getStats, recordGameResult } from './social/friends.js';
 import { runIntro } from './intro.js';
 import { flyCards, passBubble, swooshPile, shakeTable, rainbowSweep, confettiBurst, confettiRain } from './fx.js';
+import { GAMES } from './games/registry.js';
+import { createCamp } from './games/camp/index.js';
 
 const $ = (id) => document.getElementById(id);
 const els = [
@@ -28,7 +30,7 @@ const els = [
   'homeScreen', 'greeting', 'myStats', 'btnCall', 'btnJoin', 'joinCode', 'btnPractice', 'homeStatus', 'btnSignOut',
   'callScreen', 'videoGrid', 'localVideo', 'tileStrip', 'videoPark', 'codeBanner', 'callCode', 'btnCopyCode', 'rosterInfo',
   'btnMute', 'btnCam', 'btnGames', 'btnHangup',
-  'gamePicker', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
+  'gamePicker', 'gameSelect', 'sizeRow', 'sizeSeg', 'pickerHint', 'btnStartGame', 'btnPickerCancel',
   'gameLayer', 'btnLeaveGame', 'btnControls', 'btnTableMode', 'tableLayer',
   'oppBar', 'pileLabel', 'pileArea', 'pileCards', 'turnBanner', 'handArea',
   'btnSort', 'btnPlay', 'btnPass', 'passRing', 'gameOver', 'gameOverText', 'btnRematch', 'btnEndGame',
@@ -57,7 +59,10 @@ let seats = [];            // [{isAI, name, peerId}] — fixed at deal time
 const peers = new Map();   // peerId -> {name} — everyone in the call
 let state = null;          // latest snapshot for my seat
 let selected = new Set();
-let gameActive = false;
+let gameActive = false;   // Pusoy round in progress
+let campActive = false;   // Campfire in progress (mutually exclusive with above)
+let selectedGameId = 'pusoy';
+let camp = null;          // created after helpers are defined (bottom of file)
 let gesturesStarted = false;
 let localStream = null;
 let toastTimer = 0;
@@ -359,6 +364,7 @@ function newParty() {
   };
 
   party.onPeerLeave = (peerId) => {
+    camp?.onPeerLeave(peerId);
     const name = peers.get(peerId)?.name || 'Someone';
     peers.delete(peerId);
     remoteVideos.get(peerId)?.remove();
@@ -401,6 +407,9 @@ function newParty() {
   party.on('reject', (reason) => showToast(reason));
   party.on('game-end', () => hideGame());
   party.on('table', ({ on }) => setTableMode(on, true));
+  party.on('game-start', ({ game }) => {
+    if (game === 'camp' && !campActive) camp.start({ soloMode: false });
+  });
 
   party.on('intent', ({ action, cards }, fromPeer) => {
     if (!iAmAuthority) return;
@@ -445,7 +454,8 @@ els.btnJoin.onclick = async () => {
   if (code.length !== 5) { els.homeStatus.textContent = 'Enter the 5-letter code'; return; }
   try {
     els.homeStatus.textContent = 'Starting camera…';
-    await getCamera();
+    const cam = await getCamera({ required: false });
+    if (!cam) showToast('No camera — joining without video', 3000, 'info');
     els.homeStatus.textContent = 'Connecting…';
     newParty();
     iAmAuthority = false;
@@ -502,6 +512,7 @@ els.btnCam.onclick = () => {
 
 els.btnHangup.onclick = () => {
   clearTimeout(aiTimer);
+  if (camp?.active) camp.stop('hangup');
   outgoingInvite?.cancel();
   outgoingInvite = null;
   party?.destroy();
@@ -519,7 +530,7 @@ els.btnHangup.onclick = () => {
 };
 
 els.btnGames.onclick = () => {
-  if (gameActive) return;
+  if (gameActive || campActive) return;
   if (!iAmAuthority) { showToast('Only the call creator can deal — ask them to start'); return; }
   openPicker();
 };
@@ -543,6 +554,19 @@ function keepPlaying() {
 }
 
 function layout() {
+  if (campActive) {
+    // Camp draws its own world on canvas. Partners stay visible as mini
+    // tiles (the call is still the point); your own feed parks hidden —
+    // its face is sampled onto your camper.
+    els.videoGrid.replaceChildren(feltEl());
+    els.videoGrid.dataset.count = 0;
+    const remotes = [...remoteVideos.values()];
+    els.tileStrip.replaceChildren(...remotes);
+    show(els.tileStrip, remotes.length > 0);
+    els.videoPark.replaceChildren(els.localVideo);
+    keepPlaying();
+    return;
+  }
   if (gameActive) {
     // In-game, opponents live in their table-style spots (video circles with
     // card backs), so the strip and swap go away in both modes. Remote videos
@@ -701,7 +725,22 @@ function openPicker() {
   show(els.gamePicker, true);
 }
 
+els.gameSelect.onclick = (e) => {
+  const card = e.target.closest('button[data-game]');
+  if (!card) return;
+  selectedGameId = card.dataset.game;
+  for (const c of els.gameSelect.children) c.classList.toggle('on', c === card);
+  updatePickerHint();
+};
+
 function updatePickerHint() {
+  const meta = GAMES[selectedGameId];
+  show(els.sizeRow, meta.hasTableSize);
+  els.btnStartGame.textContent = selectedGameId === 'camp' ? 'Head to camp' : 'Deal the cards';
+  if (selectedGameId === 'camp') {
+    els.pickerHint.textContent = 'Walk around, fish, and keep the fire going 🏕️';
+    return;
+  }
   const humans = 1 + peers.size;
   const size = Math.min(4, Math.max(tableSize, humans));
   const bots = size - humans;
@@ -717,6 +756,11 @@ els.btnPickerCancel.onclick = () => {
 
 els.btnStartGame.onclick = () => {
   show(els.gamePicker, false);
+  if (selectedGameId === 'camp') {
+    camp.start({ soloMode: solo }); // wire the host first…
+    if (!solo) party?.send('game-start', { game: 'camp' }); // …then invite guests
+    return;
+  }
   // Seats are fixed now: host, then humans in join order, then AI fill.
   seats = [{ isAI: false, name: currentUser?.name || 'Player 1', peerId: null }];
   for (const [peerId, p] of peers) seats.push({ isAI: false, name: p.name, peerId });
@@ -1275,9 +1319,45 @@ function loop(nowMs) {
   requestAnimationFrame(loop);
 }
 
+// ================================================================ camp
+
+camp = createCamp({
+  party: () => party,
+  iAmAuthority: () => iAmAuthority,
+  solo: () => solo,
+  user: () => currentUser,
+  peers,
+  localVideo: els.localVideo,
+  remoteVideos,
+  hasStream: () => !!localStream,
+  showToast,
+  enterGameMode: () => { campActive = true; els.callScreen.classList.add('gaming'); layout(); },
+  exitGameMode: () => {
+    campActive = false;
+    els.callScreen.classList.remove('gaming');
+    layout();
+  },
+  fx: { confettiBurst, confettiRain },
+  onStopped: (reason) => {
+    if (solo && reason !== 'hangup') els.btnHangup.onclick();
+  },
+});
+window.__kritzzz.camp = camp.debug;
+
 // ================================================================ boot
 
-if (DEMO) {
+const CAMP_BOOT = new URLSearchParams(location.search).has('camp');
+
+if (CAMP_BOOT) {
+  // straight into solo camp: no auth, no camera, no network (dev/testing)
+  currentUser = { uid: null, name: 'Camper', email: null, photo: null, isGuest: true };
+  iAmAuthority = true;
+  solo = true;
+  document.getElementById('introScreen')?.remove();
+  showScreen(els.callScreen);
+  show(els.codeBanner, false);
+  camp.start({ soloMode: true });
+} else if (DEMO) {
   currentUser = { name: 'Player 1', email: null, isGuest: true };
   iAmAuthority = true;
   solo = true;

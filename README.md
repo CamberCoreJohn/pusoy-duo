@@ -1,9 +1,11 @@
 # Kritzzz
 
 A **video-calling web app** for couples and friends, with games built in.
-Sign in (or play as a guest), start a peer-to-peer video call, and deal a game
-of **Pusoy Dos** into the call whenever you feel like it — cards controlled by
-hand gestures over your own video. 1–4 players; AI bots fill empty seats.
+Sign in (or play as a guest), start a peer-to-peer video call, and launch a
+game into it: **Pusoy Dos** (cards controlled by hand gestures, AI bots fill
+seats) or **Campfire 🏕️** — a persistent co-op campsite where you walk
+around together as campers with your live video faces, fish, keep a fire
+going, roast marshmallows, stargaze, and decorate.
 
 No build step, no game server. Vanilla ES modules + MediaPipe HandLandmarker +
 PeerJS, optional Firebase Auth for email accounts. Optimized for iOS/iPadOS
@@ -35,7 +37,23 @@ and the internet, host on HTTPS (GitHub Pages works as-is).
    segmentation, fully client-side), bots get a generic animated feed. You
    always sit at the bottom; the green ring marks whose turn it is.
 
-`?demo` = 2-player hotseat, no camera/network/auth (testing).
+`?demo` = 2-player Pusoy hotseat; `?camp` = straight into solo Campfire —
+both need no camera/network/auth (testing).
+
+## Campfire 🏕️
+
+Top-down walkable campsite rendered on canvas; your camper's head is your
+live video feed. Virtual joystick (or WASD) + one context action button:
+CAST on the shore, CHOP at trees, STRIKE/ADD WOOD/GRILL/ROAST at the fire,
+STARGAZE at the tent after dark (10-minute day/night cycle). Fishing =
+hold-to-cast power, tap the bite, keep the reel needle in the zone; rarities
+up to the Arowana 🐉 (and the Old Boot). The campsite **persists**: fish log
++ records, campfire streak, traced constellations, camp points, and placed
+decorations live in Firestore under `campsites/{hostUid}` (host is the
+authority and sole writer; localStorage fallback for signed-out play). The
+host relays guest positions (10Hz, interpolated ~150ms); minigames run
+locally so they feel instant. All camp traffic multiplexes over one `camp`
+message type — the existing protocol is untouched.
 
 ## Accounts, friends & invites
 
@@ -97,7 +115,10 @@ src/game/combos.js            combination classification + comparison
 src/game/engine.js            host-authoritative turn engine (2-4 players)
 src/game/ai.js                bot player (runs on the host)
 src/net/peer.js               PeerJS party: star data topology + video mesh
-src/avatars.js                table-mode avatars: segmentation cutouts + bot feeds
+src/avatars.js                avatar canvases: video crops / bot feeds / initials
+src/games/registry.js         game picker metadata
+src/games/camp/               Campfire: world, render, input, net, fishing,
+                              fire, stars, decor, save (+ index orchestrator)
 src/gestures/hands.js         MediaPipe hand tracking -> cursor/pinch/fist events
 ```
 

@@ -107,8 +107,11 @@
     <!-- Game picker -->
     <div id="gamePicker" class="modal hidden">
       <div class="panel">
-        <h2>Pusoy Dos</h2>
-        <div class="size-row">
+        <div id="gameSelect" class="game-select">
+          <button data-game="pusoy" class="game-card on"><span class="ge">🃏</span><b>Pusoy Dos</b><span class="gt">Filipino Big Two</span></button>
+          <button data-game="camp" class="game-card"><span class="ge">🏕️</span><b>Campfire</b><span class="gt">Our cozy campsite</span></button>
+        </div>
+        <div class="size-row" id="sizeRow">
           Table size
           <div class="seg" id="sizeSeg">
             <button data-size="2" class="on">2</button>
@@ -151,6 +154,48 @@
       </div>
     </div>
 
+    <!-- Campfire 🏕️ -->
+    <div id="campLayer" class="hidden">
+      <canvas id="campCanvas"></canvas>
+      <div id="campHud">
+        <div id="campStatus" class="camp-chip"></div>
+        <div id="campPrompt"></div>
+        <button id="campAction" class="camp-action hidden"></button>
+        <div id="castMeter" class="minigame hidden">
+          <div class="bar"><div id="castFill" class="fill"></div></div><label>power</label>
+        </div>
+        <div id="reelGame" class="minigame hidden">
+          <div class="bar zonebar"><div class="zone reel-zone"></div><div id="reelNeedle" class="needle"></div></div>
+          <div class="bar"><div id="reelProgress" class="fill ok"></div></div>
+          <label>hold to reel — keep the needle in the zone!</label>
+        </div>
+        <div id="strikeGame" class="minigame hidden">
+          <div class="bar zonebar"><div class="zone strike-zone"></div><div id="strikeSpark" class="needle spark">⚡</div></div>
+          <label>tap when the spark crosses the zone ×3</label>
+        </div>
+        <div id="roastGame" class="minigame hidden">
+          <div id="roastMallow">⚪</div>
+          <div class="bar zonebar"><div class="zone golden-band"></div><div id="roastFill" class="fill warm"></div></div>
+          <label>release in the golden band</label>
+        </div>
+        <div id="catchCard" class="catch-card hidden">
+          <div class="catch-emoji"></div><div class="catch-name"></div><div class="catch-size"></div>
+        </div>
+        <div id="campLog" class="camp-panel hidden"><div id="campLogList"></div></div>
+        <div id="campShop" class="camp-panel hidden">
+          <div id="campShopPoints"></div><div id="campShopList"></div>
+          <button id="btnShopClose" class="linkish">Close</button>
+        </div>
+      </div>
+      <button id="btnLeaveCamp" class="leave-game">✕</button>
+      <button id="btnCampLog" class="leave-game camp-btn2">📖</button>
+      <button id="btnCampShop" class="leave-game camp-btn3">🎪</button>
+      <div id="starView" class="star-view hidden">
+        <canvas></canvas>
+        <button id="btnStarClose" class="leave-game">✕</button>
+      </div>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
     <div id="cursor" class="cursor hidden"><div class="cursor-dot"></div></div>
   </div>
@@ -167,6 +212,6 @@
     </div>
   </div>
 
-  <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/app.js?v=camp1"></script>
 </body>
 </html>

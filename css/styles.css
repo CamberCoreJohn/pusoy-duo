@@ -542,6 +542,115 @@ button.action:disabled { opacity: 0.3; cursor: default; }
   font-size: 1.45rem; font-weight: 800; letter-spacing: -0.01em;
 }
 
+/* ---------- game picker cards ---------- */
+.game-select { display: flex; gap: 10px; }
+.game-card {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 8px; border-radius: 16px; cursor: pointer;
+  background: rgba(0, 0, 0, 0.25); border: 1px solid var(--stroke); color: var(--text);
+}
+.game-card .ge { font-size: 1.8rem; }
+.game-card .gt { font-size: 0.72rem; color: var(--muted); }
+.game-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(139, 124, 246, 0.35); }
+
+/* ---------- camp 🏕️ ---------- */
+#campLayer { position: absolute; inset: 0; z-index: 3; }
+#campCanvas { position: absolute; inset: 0; touch-action: none; }
+#campHud { position: absolute; inset: 0; touch-action: none; }
+.camp-chip {
+  position: absolute; top: calc(14px + var(--sat)); left: 50%; transform: translateX(-50%);
+  background: var(--glass); border: 1px solid var(--stroke); border-radius: 999px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  padding: 7px 16px; font-size: 0.9rem; pointer-events: none;
+}
+#campPrompt {
+  position: absolute; top: calc(60px + var(--sat)); left: 50%; transform: translateX(-50%);
+  font-weight: 800; font-size: 1.1rem; color: #ffd778; pointer-events: none;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+.camp-action {
+  position: absolute; right: calc(20px + var(--sar)); bottom: calc(28px + var(--sab));
+  width: 84px; height: 84px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35);
+  background: var(--grad); color: #0a0c12; font-weight: 800; font-size: 0.8rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); cursor: pointer;
+  -webkit-user-select: none; user-select: none; touch-action: none;
+}
+.camp-action:active { transform: scale(0.94); }
+.joy-base {
+  position: fixed; width: 108px; height: 108px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08);
+  transform: translate(-50%, -50%); pointer-events: none; z-index: 5;
+}
+.joy-nub {
+  position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55); margin: -22px 0 0 -22px;
+}
+.camp-btn2 { top: calc(66px + var(--sat)); }
+.camp-btn3 { top: calc(118px + var(--sat)); }
+
+.minigame {
+  position: absolute; left: 50%; bottom: calc(140px + var(--sab)); transform: translateX(-50%);
+  width: min(340px, 84vw); display: flex; flex-direction: column; gap: 6px; align-items: center;
+  background: var(--glass); border: 1px solid var(--stroke); border-radius: 18px;
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  padding: 14px; z-index: 6; pointer-events: none;
+}
+.minigame label { font-size: 0.78rem; color: var(--muted); }
+.minigame .bar {
+  position: relative; width: 100%; height: 16px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4); overflow: hidden;
+}
+.minigame .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--grad); border-radius: 999px; }
+.minigame .fill.ok { background: var(--ok); }
+.minigame .fill.warm { background: linear-gradient(90deg, #fdfdf8, #ffd778 60%, #7a4a1f); }
+.minigame .zone { position: absolute; top: 0; bottom: 0; background: rgba(52, 211, 153, 0.35); }
+.reel-zone { left: 28%; width: 50%; }
+.strike-zone { left: 38%; width: 24%; }
+.golden-band { left: 55%; width: 27%; background: rgba(255, 214, 110, 0.45); }
+.minigame .needle {
+  position: absolute; top: -4px; bottom: -4px; width: 5px; border-radius: 3px;
+  background: #fff; transform: translateX(-50%);
+}
+.needle.spark { width: auto; background: none; font-size: 1rem; top: -3px; }
+#reelGame.danger .bar { box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.8); }
+#strikeGame.hit .bar { box-shadow: 0 0 0 2px var(--ok); }
+#roastMallow { font-size: 2rem; }
+
+.catch-card {
+  position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: var(--glass); border: 1px solid var(--stroke); border-radius: 22px;
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  padding: 24px 40px; z-index: 8; pointer-events: none;
+  animation: cardLand 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.catch-card .catch-emoji { font-size: 3rem; }
+.catch-card .catch-name { font-weight: 800; font-size: 1.2rem; }
+.catch-card .catch-size { color: var(--muted); }
+.catch-card[data-rarity="rare"] { border-color: #ffd778; box-shadow: 0 0 30px rgba(255, 214, 110, 0.5); }
+.catch-card[data-rarity="epic"] { border-color: var(--accent); box-shadow: 0 0 40px rgba(139, 124, 246, 0.7); }
+
+.camp-panel {
+  position: absolute; right: calc(12px + var(--sar)); top: calc(170px + var(--sat));
+  width: min(320px, 86vw); max-height: 50dvh; overflow-y: auto;
+  background: var(--glass); border: 1px solid var(--stroke); border-radius: 18px;
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  padding: 14px; z-index: 7; display: flex; flex-direction: column; gap: 8px;
+}
+.log-head { font-weight: 800; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.log-row { font-size: 0.88rem; padding: 4px 0; }
+.log-row[data-rarity="rare"], .log-row[data-rarity="epic"] { color: #ffd778; }
+.shop-row {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  background: rgba(0, 0, 0, 0.25); border: 1px solid var(--stroke); color: var(--text);
+  border-radius: 12px; padding: 10px 14px; cursor: pointer; font-size: 0.95rem;
+}
+.shop-row:disabled { opacity: 0.4; }
+.shop-row .cost { color: #ffd778; font-weight: 700; }
+
+.star-view { position: absolute; inset: 0; z-index: 9; }
+.star-view canvas { position: absolute; inset: 0; touch-action: none; }
+
 /* ---------- phones (portrait) ---------- */
 @media (max-width: 700px) and (orientation: portrait) {
   :root { --card-w: clamp(44px, 12vw, 60px); }
