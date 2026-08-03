@@ -79,10 +79,19 @@ export function chooseAiPlay(hand, pile, { mustInclude = null, rules = DEFAULT_R
   if (candidates.length === 0) return null;
 
   const unit = rankUnits(hand);
-  const minOpp = oppCounts.length ? Math.min(...oppCounts) : 13;
+  const active = oppCounts.filter((c) => c > 0); // finished players don't count
+  const minOpp = active.length ? Math.min(...active) : 13;
   const urgent = minOpp <= 2;               // someone is about to go out
   const finisher = candidates.find((c) => c.cards.length === hand.length);
   if (finisher) return finisher.cards.map((c) => c.id); // win on the spot
+
+  // Per-decision focus: most turns the bot plays its best line, but roughly
+  // a quarter of the time it goes casual and picks among its top options.
+  // Keeps it beatable without ever making it look drunk.
+  const fuzzyPick = (sorted) => {
+    const k = rand() < 0.28 ? Math.min(3, sorted.length) : 1;
+    return sorted[Math.floor(rand() * k)];
+  };
 
   if (!pile) {
     // Leading. Denial mode: with an opponent at 1-2 cards, don't feed them
@@ -103,12 +112,12 @@ export function chooseAiPlay(hand, pile, { mustInclude = null, rules = DEFAULT_R
       scoreCandidate(a, unit, { urgent }) - scoreCandidate(b, unit, { urgent })
       || highestValue(a) - highestValue(b)
       || b.cards.length - a.cards.length);
-    return candidates[0].cards.map((c) => c.id);
+    return fuzzyPick(candidates).cards.map((c) => c.id);
   }
 
   // Following: cheapest sensible beat.
   candidates.sort((a, b) => scoreCandidate(a, unit, { urgent }) - scoreCandidate(b, unit, { urgent }));
-  const pick = candidates[0];
+  const pick = fuzzyPick(candidates);
   const pickScore = scoreCandidate(pick, unit, { urgent });
 
   // Strategic pass: the trick is cheap, nobody is threatening, and our only
@@ -117,7 +126,7 @@ export function chooseAiPlay(hand, pile, { mustInclude = null, rules = DEFAULT_R
   if (!urgent && minOpp >= 5) {
     const pileCheap = cardValue(pile.cards[pile.cards.length - 1]) < cardValue({ r: 9, s: 0 }); // < Q
     const expensive = pickScore >= 2500;
-    if (pileCheap && expensive && rand() < 0.75) return null;
+    if (pileCheap && expensive && rand() < 0.55) return null;
     // Occasionally duck even a fair fight to mix up reads.
     if (pileCheap && hand.length > 9 && rand() < 0.08) return null;
   }

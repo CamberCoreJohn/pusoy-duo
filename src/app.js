@@ -365,7 +365,7 @@ function newParty() {
     remoteVideos.delete(peerId);
     layout();
     const seat = seats.findIndex((s) => s.peerId === peerId);
-    if (engine && seat >= 0 && engine.winner < 0) {
+    if (engine && seat >= 0 && !engine.roundOver) {
       // A seated human dropped mid-round: an AI takes over their hand.
       seats[seat] = { isAI: true, name: `${name} (AI)`, peerId: null };
       showToast(`${name} left — AI plays their hand`, 3500);
@@ -661,10 +661,17 @@ function buildTableSpots() {
 function updateTableSpots(snap) {
   for (const spot of els.tableLayer.children) {
     const i = Number(spot.dataset.seat);
-    spot.classList.toggle('turn', snap.turn === i && snap.winner < 0);
-    spot.classList.toggle('control', !snap.pile && snap.turn === i && snap.winner < 0);
+    const done = snap.counts[i] === 0;
+    const inPlay = !done && !snap.roundOver;
+    spot.classList.toggle('done', done);
+    spot.classList.toggle('turn', snap.turn === i && inPlay);
+    spot.classList.toggle('control', !snap.pile && snap.turn === i && inPlay);
     const label = spot.querySelector('.spot-label');
-    if (label) label.innerHTML = `${seatName(i)} · <span class="cnt">${snap.counts[i]}</span>`;
+    if (label) {
+      label.innerHTML = done
+        ? `${MEDALS[snap.rankings.indexOf(i)] || '🏁'} ${seatName(i)}`
+        : `${seatName(i)} · <span class="cnt">${snap.counts[i]}</span>`;
+    }
     const mini = spot.querySelector('.mini-cards');
     if (mini) {
       const want = Math.min(snap.counts[i], 13);
@@ -787,6 +794,7 @@ function hideGame() {
   lastPileKey = '';
   lastLogN = 0;
   winnerCelebrated = false;
+  resultRecorded = false;
   els.callScreen.classList.remove('gaming');
   show(els.cursor, false);
   layout();
@@ -811,11 +819,14 @@ async function startGestures() {
 }
 
 function startRound() {
-  engine = new PusoyEngine({ players: seats.length });
+  // crypto-grade shuffle so deals can't fall into Math.random patterns
+  const rand = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+  engine = new PusoyEngine({ players: seats.length, rand });
   selected.clear();
   lastPileKey = ''; // first play of the round should animate
   lastLogN = 0;
   winnerCelebrated = false;
+  resultRecorded = false;
   customOrder = null;
   if (sortMode === 'custom') { sortMode = 'rank'; els.btnSort.textContent = SORTS.rank.label; }
   broadcast();
@@ -823,7 +834,7 @@ function startRound() {
 
 function broadcast() {
   if (DEMO) {
-    mySeat = engine.winner >= 0 ? engine.winner : engine.turn;
+    mySeat = engine.roundOver ? engine.rankings[0] : engine.turn;
     applyState(engine.snapshot(mySeat));
     return;
   }
@@ -836,13 +847,13 @@ function broadcast() {
 
 function scheduleAI() {
   clearTimeout(aiTimer);
-  if (!iAmAuthority || !engine || engine.winner >= 0) return;
+  if (!iAmAuthority || !engine || engine.roundOver) return;
   if (!seats[engine.turn]?.isAI) return;
   let delay = AI_DELAY_MS[0] + Math.random() * (AI_DELAY_MS[1] - AI_DELAY_MS[0]);
   // give the take-control celebration room to play out
   if (engine.log[engine.log.length - 1]?.type === 'control') delay += 2000;
   aiTimer = setTimeout(() => {
-    if (!engine || !seats[engine.turn]?.isAI || engine.winner >= 0) return;
+    if (!engine || !seats[engine.turn]?.isAI || engine.roundOver) return;
     const seat = engine.turn;
     const ids = chooseAiPlay(engine.hands[seat], engine.pile, {
       mustInclude: engine.mustIncludeLowest ? engine.lowestInPlay : null,
@@ -863,7 +874,7 @@ function hostAction(player, action, cards) {
   let res;
   if (action === 'play') res = engine.play(player, cards);
   else if (action === 'pass') res = engine.pass(player);
-  else if (action === 'rematch') { if (engine.winner >= 0 || DEMO) startRound(); return; }
+  else if (action === 'rematch') { if (engine.roundOver || DEMO) startRound(); return; }
   else return;
   if (!res.ok) {
     if (player === mySeat) showToast(res.reason);
@@ -985,6 +996,10 @@ function toggleCard(id) {
 let lastPileKey = '';
 let lastLogN = 0;
 let winnerCelebrated = false;
+let resultRecorded = false;
+
+const MEDALS = ['🥇', '🥈', '🥉', '💀'];
+const PLACES = ['1st', '2nd', '3rd', 'last'];
 
 function spawnSunrays() {
   if (!gameActive) return;
@@ -1035,7 +1050,7 @@ function applyState(snap) {
   const isNewPlay = !!pileKey && pileKey !== lastPileKey;
 
   // trick conceded: the dead pile swooshes off toward whoever leads next
-  if (!pileKey && lastPileKey && snap.winner < 0) {
+  if (!pileKey && lastPileKey && !snap.roundOver) {
     swooshPile([...els.pileCards.children], seatRect(snap.turn));
   }
   lastPileKey = pileKey;
@@ -1054,7 +1069,7 @@ function applyState(snap) {
   els.oppBar.replaceChildren(...snap.counts.flatMap((count, i) => {
     if (i === snap.you) return [];
     const chip = document.createElement('div');
-    chip.className = 'opp-chip' + (seats[i]?.isAI ? ' ai' : '') + (snap.turn === i && snap.winner < 0 ? ' turn' : '');
+    chip.className = 'opp-chip' + (seats[i]?.isAI ? ' ai' : '') + (snap.turn === i && !snap.roundOver && snap.counts[i] > 0 ? ' turn' : '');
     chip.innerHTML = `${seatName(i)} · <span class="cnt">${count}</span>`;
     return [chip];
   }));
@@ -1099,22 +1114,38 @@ function applyState(snap) {
     : snap.turn === snap.you ? '👑 You have control — play anything'
     : `👑 ${seatName(snap.turn)} has control`;
 
-  const yourTurn = snap.turn === snap.you && snap.winner < 0;
-  els.turnBanner.textContent = snap.winner >= 0 ? '' : yourTurn ? 'Your turn' : `${seatName(snap.turn)}'s turn…`;
+  const iFinished = snap.counts[snap.you] === 0 && !snap.roundOver;
+  const yourTurn = snap.turn === snap.you && !snap.roundOver && !iFinished;
+  els.turnBanner.textContent =
+    snap.roundOver ? ''
+    : iFinished ? `${MEDALS[snap.rankings.indexOf(snap.you)] || ''} You finished ${PLACES[snap.rankings.indexOf(snap.you)] || ''} — the battle continues…`
+    : yourTurn ? 'Your turn'
+    : `${seatName(snap.turn)}'s turn…`;
   els.turnBanner.classList.toggle('yours', yourTurn);
   if (gameActive) updateTableSpots(snap);
   refreshHand();
 
-  if (snap.winner >= 0) {
-    els.gameOverText.textContent = snap.winner === snap.you ? 'You win! 🎉' : `${seatName(snap.winner)} wins! 💖`;
-    if (!winnerCelebrated) {
-      winnerCelebrated = true;
-      confettiRain();
-      recordResult(snap.winner === snap.you);
+  // first finisher gets the fireworks even though the round rolls on
+  if (snap.winner >= 0 && !winnerCelebrated) {
+    winnerCelebrated = true;
+    confettiRain();
+    if (!snap.roundOver) {
+      showToast(snap.winner === snap.you ? 'You win! 🎉 Others battle for places…'
+        : `${seatName(snap.winner)} wins! 🥇`, 3000, 'info');
+    }
+  }
+  if (snap.winner < 0) winnerCelebrated = false;
+
+  if (snap.roundOver) {
+    els.gameOverText.innerHTML = snap.rankings.map((seat, i) =>
+      `<div class="standing">${MEDALS[i]} ${seatName(seat)}</div>`).join('');
+    if (!resultRecorded) {
+      resultRecorded = true;
+      recordResult(snap.rankings[0] === snap.you);
     }
     show(els.gameOver, true);
   } else {
-    winnerCelebrated = false;
+    resultRecorded = false;
     show(els.gameOver, false);
   }
 }
@@ -1133,7 +1164,7 @@ function refreshHand() {
 }
 
 function updateButtons() {
-  const yourTurn = state && state.turn === state.you && state.winner < 0;
+  const yourTurn = state && state.turn === state.you && !state.roundOver && state.counts[state.you] > 0;
   let playable = false;
   if (yourTurn && selected.size > 0) {
     const cards = state.yourHand.filter((c) => selected.has(c.id));

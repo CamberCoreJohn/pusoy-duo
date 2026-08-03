@@ -272,6 +272,10 @@ button.linkish:hover { color: var(--text); }
 .player-spot.turn canvas {
   border-color: var(--ok); box-shadow: 0 0 26px rgba(52, 211, 153, 0.5);
 }
+.player-spot.done { opacity: 0.7; }
+.player-spot.done canvas { filter: grayscale(0.5); }
+.game-over-box .standing { font-size: 1.25rem; text-align: left; }
+.game-over-box .standing:first-child { font-size: 1.5rem; }
 /* holder of the lead: crown on the label, golden ring on the avatar */
 .player-spot.control .spot-label::before { content: '👑 '; }
 .player-spot.control canvas {
