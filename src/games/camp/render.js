@@ -19,6 +19,8 @@ export class CampRenderer {
     this.glow = makeGlowSprite();
     this.snow = null;     // lazily built particle arrays
     this.fireflies = null;
+    this.transients = []; // short-lived effects: {type, t0, ...}
+    this.decor = [];      // current map's placed decor (for night glows)
     this.resize();
     this._onResize = () => this.resize();
     addEventListener('resize', this._onResize);
@@ -34,9 +36,17 @@ export class CampRenderer {
     this.scale = Math.max(innerWidth, innerHeight) * DPR / 1150;
   }
 
+  /** Fire-and-forget world-space effect (fish arc, honk notes, poofs). */
+  addTransient(fx) {
+    this.transients.push({ t0: performance.now(), ...fx });
+    if (this.transients.length > 12) this.transients.shift();
+  }
+
   /** Paint the static scene for a map. */
   paintBackground(map, decor = [], unlocked = []) {
     this.map = map;
+    this.decor = decor;
+    this.unlocked = unlocked;
     const c = this.bg.getContext('2d');
     const { w, h } = WORLD;
     const P = map.palette;
@@ -69,6 +79,29 @@ export class CampRenderer {
     this.drawRoadSign(c, map.roadSign);
     for (const t of map.trees) drawTree(c, t, P);
     if (unlocked.includes('truck')) drawTruckBody(c, map.truckSpot.x, map.truckSpot.y + map.truckSpot.h, 1);
+    // owned gear lives in the world
+    const fp = map.firepit;
+    if (unlocked.includes('bbq')) {
+      c.fillStyle = '#2b2b31'; c.fillRect(fp.x + 74, fp.y - 24, 52, 30);
+      c.fillStyle = '#6e6e78'; c.fillRect(fp.x + 78, fp.y + 6, 6, 26); c.fillRect(fp.x + 116, fp.y + 6, 6, 26);
+      for (let i = 0; i < 4; i++) { c.fillStyle = '#1b1b20'; c.fillRect(fp.x + 78 + i * 12, fp.y - 20, 8, 3); }
+    }
+    if (unlocked.includes('cooler')) {
+      c.fillStyle = '#2a8ab0'; c.fillRect(fp.x - 120, fp.y + 20, 44, 30);
+      c.fillStyle = '#e8f4fa'; c.fillRect(fp.x - 120, fp.y + 16, 44, 8);
+    }
+    if (unlocked.includes('telescope')) {
+      const tx = map.tent.x + map.tent.w + 40, ty = map.tent.y + map.tent.h - 10;
+      c.strokeStyle = '#caa96d'; c.lineWidth = 5;
+      c.beginPath(); c.moveTo(tx - 14, ty); c.lineTo(tx, ty - 26); c.lineTo(tx + 14, ty); c.stroke();
+      c.save(); c.translate(tx, ty - 30); c.rotate(-0.6);
+      c.fillStyle = '#4a4a58'; c.fillRect(-6, -8, 40, 14); c.fillStyle = '#8b7cf6'; c.fillRect(30, -8, 6, 14);
+      c.restore();
+    }
+    if (unlocked.includes('heater') && map.features.snow) {
+      c.fillStyle = '#8a2f2f'; c.fillRect(fp.x - 90, fp.y - 46, 26, 40);
+      c.fillStyle = '#ffb52e'; c.fillRect(fp.x - 85, fp.y - 38, 16, 12);
+    }
     for (const d of decor) if (!d.spot || d.spot === map.id) drawDecor(c, d);
   }
 
@@ -234,11 +267,65 @@ export class CampRenderer {
     if (truck && truck.driving) this.drawDrivingTruck(now, truck);
 
     for (const p of players) {
-      if (p.fishing?.bobber) this.drawBobber(now, p.fishing.bobber, p.fishing.bite);
+      if (p.fishing?.bobber) this.drawBobber(now, p.fishing.bobber, p.fishing.bite, p.fishing.reeling);
     }
 
+    this.drawTransients(now);
     this.weather(now, map, world);
     this.nightAndLight(now, map, world);
+  }
+
+  drawTransients(now) {
+    const { ctx, scale } = this;
+    this.transients = this.transients.filter((fx) => {
+      const t = (now - fx.t0) / (fx.type === 'fishArc' ? 750 : 1000);
+      if (t >= 1) return false;
+      if (fx.type === 'fishArc') {
+        // the catch leaps from the water to the camper in a proud arc
+        const x = fx.from.x + (fx.to.x - fx.from.x) * t;
+        const y = fx.from.y + (fx.to.y - fx.from.y) * t - Math.sin(t * Math.PI) * 150;
+        const s = this.worldToScreen(x, y);
+        ctx.font = `${30 * scale}px system-ui`;
+        ctx.textAlign = 'center';
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(Math.sin(t * Math.PI * 3) * 0.5);
+        ctx.fillText(fx.emoji || '🐟', 0, 0);
+        ctx.restore();
+        if (t < 0.25) this.splash(now, fx.from, 1.4); // launch splash
+      } else if (fx.type === 'notes') {
+        const s = this.worldToScreen(fx.at.x, fx.at.y);
+        ctx.font = `${20 * scale}px system-ui`;
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = 1 - t;
+        ctx.fillText('🎵', s.x - 26 * scale, s.y - (70 + t * 60) * scale);
+        ctx.fillText('🎶', s.x + 22 * scale, s.y - (86 + t * 70) * scale);
+        ctx.globalAlpha = 1;
+      } else if (fx.type === 'poof') {
+        const s = this.worldToScreen(fx.at.x, fx.at.y);
+        ctx.strokeStyle = `rgba(255,255,255,${0.6 * (1 - t)})`;
+        ctx.lineWidth = 3 * scale;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, (10 + t * 34) * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      return true;
+    });
+  }
+
+  /** White droplet splash around a world point. intensity ~1. */
+  splash(now, at, intensity = 1) {
+    const { ctx, scale } = this;
+    const s = this.worldToScreen(at.x, at.y);
+    ctx.fillStyle = 'rgba(240, 250, 255, 0.85)';
+    for (let i = 0; i < 6; i++) {
+      const ph = now / 90 + i * 1.7;
+      const dx = Math.sin(ph) * (10 + i * 3) * intensity * scale;
+      const dy = -Math.abs(Math.cos(ph * 1.3)) * (14 + i * 2) * intensity * scale;
+      ctx.beginPath();
+      ctx.arc(s.x + dx, s.y + dy, 2.4 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   waterShimmer(now, map) {
@@ -323,15 +410,49 @@ export class CampRenderer {
       }
       ctx.globalCompositeOperation = 'source-over';
     }
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = nf;
     if (world.fire.lit && world.fire.lvl > 0) {
       const f = this.worldToScreen(map.firepit.x, map.firepit.y);
       const r = (120 + world.fire.lvl * 3.4) * scale;
-      ctx.globalCompositeOperation = 'screen';
-      ctx.globalAlpha = nf;
       ctx.drawImage(this.glow, f.x - r, f.y - r, r * 2, r * 2);
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
     }
+    // your lanterns and string lights earn their keep after dark
+    for (const d of this.decor) {
+      if (d.spot && d.spot !== map.id) continue;
+      if (d.item === 'lantern') {
+        const p = this.worldToScreen(d.x, d.y - 30);
+        const r = (60 + Math.sin(now / 300 + d.x) * 5) * scale;
+        ctx.drawImage(this.glow, p.x - r, p.y - r, r * 2, r * 2);
+      } else if (d.item === 'lights') {
+        for (let i = -2; i <= 2; i++) {
+          const p = this.worldToScreen(d.x + i * 26, d.y + 18 - Math.abs(i) * 6);
+          const tw = 0.5 + 0.5 * Math.sin(now / 260 + i * 2.1);
+          ctx.globalAlpha = nf * (0.4 + 0.5 * tw);
+          const r = 18 * scale;
+          ctx.drawImage(this.glow, p.x - r, p.y - r, r * 2, r * 2);
+        }
+        ctx.globalAlpha = nf;
+      }
+    }
+    // headlights when driving at night
+    if (this.headlights) {
+      const t = this.headlights;
+      const s = this.worldToScreen(t.x, t.y);
+      const g = ctx.createLinearGradient(s.x, s.y, s.x + t.dir * 320 * scale, s.y);
+      g.addColorStop(0, 'rgba(255, 245, 200, 0.5)');
+      g.addColorStop(1, 'rgba(255, 245, 200, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(s.x + t.dir * 90 * scale, s.y - 30 * scale);
+      ctx.lineTo(s.x + t.dir * 330 * scale, s.y - 95 * scale);
+      ctx.lineTo(s.x + t.dir * 330 * scale, s.y + 60 * scale);
+      ctx.lineTo(s.x + t.dir * 90 * scale, s.y + 5 * scale);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   drawFire(now, lvl, pit) {
@@ -351,7 +472,8 @@ export class CampRenderer {
   drawPlayer(now, p) {
     const { ctx, scale } = this;
     const s = this.worldToScreen(p.x, p.y);
-    const waddle = p.m ? Math.sin(now / 110) * 3 * scale : 0;
+    const sit = !!p.sit;
+    const waddle = p.m && !sit ? Math.sin(now / 110) * 3 * scale : 0;
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath();
     ctx.ellipse(s.x, s.y + 24 * scale, 20 * scale, 8 * scale, 0, 0, Math.PI * 2);
@@ -360,25 +482,34 @@ export class CampRenderer {
     ctx.lineWidth = 7 * scale;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(s.x - 7 * scale, s.y + 8 * scale);
-    ctx.lineTo(s.x - 7 * scale + waddle, s.y + 24 * scale);
-    ctx.moveTo(s.x + 7 * scale, s.y + 8 * scale);
-    ctx.lineTo(s.x + 7 * scale - waddle, s.y + 24 * scale);
+    if (sit) {
+      // legs folded forward — cozy chair posture
+      ctx.moveTo(s.x - 7 * scale, s.y + 12 * scale);
+      ctx.lineTo(s.x - 15 * scale, s.y + 22 * scale);
+      ctx.moveTo(s.x + 7 * scale, s.y + 12 * scale);
+      ctx.lineTo(s.x + 15 * scale, s.y + 22 * scale);
+    } else {
+      ctx.moveTo(s.x - 7 * scale, s.y + 8 * scale);
+      ctx.lineTo(s.x - 7 * scale + waddle, s.y + 24 * scale);
+      ctx.moveTo(s.x + 7 * scale, s.y + 8 * scale);
+      ctx.lineTo(s.x + 7 * scale - waddle, s.y + 24 * scale);
+    }
     ctx.stroke();
     ctx.fillStyle = `hsl(${p.hue} 45% 45%)`;
-    roundRect(ctx, s.x - 15 * scale, s.y - 14 * scale, 30 * scale, 28 * scale, 10 * scale);
+    roundRect(ctx, s.x - 15 * scale, s.y - (sit ? 8 : 14) * scale, 30 * scale, 28 * scale, 10 * scale);
     const hr = 19 * scale;
+    const hy = s.y - (sit ? 20 : 26) * scale;
     ctx.save();
     ctx.beginPath();
-    ctx.arc(s.x, s.y - 26 * scale, hr, 0, Math.PI * 2);
+    ctx.arc(s.x, hy, hr, 0, Math.PI * 2);
     ctx.clip();
-    if (p.head) ctx.drawImage(p.head, s.x - hr, s.y - 26 * scale - hr, hr * 2, hr * 2);
-    else { ctx.fillStyle = `hsl(${p.hue} 40% 30%)`; ctx.fillRect(s.x - hr, s.y - 26 * scale - hr, hr * 2, hr * 2); }
+    if (p.head) ctx.drawImage(p.head, s.x - hr, hy - hr, hr * 2, hr * 2);
+    else { ctx.fillStyle = `hsl(${p.hue} 40% 30%)`; ctx.fillRect(s.x - hr, hy - hr, hr * 2, hr * 2); }
     ctx.restore();
     ctx.strokeStyle = 'rgba(255,255,255,0.65)';
     ctx.lineWidth = 2.5 * scale;
     ctx.beginPath();
-    ctx.arc(s.x, s.y - 26 * scale, hr, 0, Math.PI * 2);
+    ctx.arc(s.x, hy, hr, 0, Math.PI * 2);
     ctx.stroke();
     ctx.font = `600 ${12 * scale}px Outfit, system-ui`;
     ctx.textAlign = 'center';
@@ -398,6 +529,17 @@ export class CampRenderer {
     const { ctx, scale } = this;
     const s = this.worldToScreen(truck.x, truck.y);
     const bob = Math.sin(now / 120) * 2 * scale;
+    // dust kicked up behind the wheels while rolling
+    if (truck.moving) {
+      for (let i = 0; i < 3; i++) {
+        const ph = (now / 240 + i * 0.37) % 1;
+        ctx.fillStyle = `rgba(160, 140, 110, ${0.35 * (1 - ph)})`;
+        ctx.beginPath();
+        ctx.arc(s.x - truck.dir * (95 + ph * 60) * scale, s.y + (46 - ph * 26) * scale,
+          (7 + ph * 14) * scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.save();
     ctx.translate(s.x, s.y + bob);
     if (truck.dir < 0) ctx.scale(-1, 1);
@@ -421,10 +563,20 @@ export class CampRenderer {
     ctx.restore();
   }
 
-  drawBobber(now, bobber, biting) {
+  drawBobber(now, bobber, biting, reeling) {
     const { ctx, scale } = this;
     const b = this.worldToScreen(bobber.x, bobber.y);
     const dip = biting ? Math.sin(now / 60) * 5 * scale : Math.sin(now / 500) * 2 * scale;
+    // idle ripples spreading from the bobber
+    if (!biting && !reeling) {
+      const rp = (now % 1600) / 1600;
+      ctx.strokeStyle = `rgba(255,255,255,${0.35 * (1 - rp)})`;
+      ctx.lineWidth = 1.6 * scale;
+      ctx.beginPath();
+      ctx.ellipse(b.x, b.y + 4 * scale, (8 + rp * 30) * scale, (4 + rp * 14) * scale, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (biting || reeling) this.splash(now, bobber, biting ? 1.3 : 1);
     ctx.fillStyle = '#f43f5e';
     ctx.beginPath();
     ctx.arc(b.x, b.y + dip, 6 * scale, Math.PI, 0);

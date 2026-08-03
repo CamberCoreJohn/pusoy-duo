@@ -105,7 +105,7 @@ export class Fishing {
   get active() { return this.state !== 'idle'; }
   get fishingView() {
     return this.state === 'idle' ? null
-      : { bobber: this.bobber, bite: this.state === 'biting' };
+      : { bobber: this.bobber, bite: this.state === 'biting', reeling: this.state === 'reeling' };
   }
 
   _t(fn, ms) { this.timers.push(setTimeout(fn, ms)); }

@@ -374,6 +374,8 @@ export function createCamp(ctx) {
         break;
       case 'truck': {
         if (!truck) spawnTruck();
+        const boarded = (ev.driverId && !truck.driverId) || (ev.riders.length > truck.riders.size);
+        if (boarded) renderer.addTransient({ type: 'poof', at: { x: truck.x, y: truck.y } });
         truck.driverId = ev.driverId;
         truck.riders = new Set(ev.riders);
         truck.driving = !!ev.driverId;
@@ -394,6 +396,7 @@ export function createCamp(ctx) {
       case 'travel': startTravel(ev.spot, ev.byName); break;
       case 'honk':
         toast('📯 HONK!', 900, 'info');
+        if (truck) renderer.addTransient({ type: 'notes', at: { x: truck.x, y: truck.y } });
         break;
       case 'reject': toast(ev.msg); break;
     }
@@ -536,7 +539,7 @@ export function createCamp(ctx) {
       const id = msg.id ?? fromPeer;
       const p = players.get(id);
       p?.interp?.push(performance.now(), msg.x, msg.y, msg.f, msg.m);
-      if (p) { p.x = msg.x; p.y = msg.y; }
+      if (p) { p.x = msg.x; p.y = msg.y; p.sit = !!msg.s; }
     });
 
     net.on('tpos', (msg, fromPeer) => {
@@ -578,6 +581,12 @@ export function createCamp(ctx) {
     const busy = fishing.active || fireAct.active || stars?.open || traveling;
     const role = myTruckRole();
 
+    // any stick input stands you up from your chair
+    if (me.sit && (v.x || v.y)) {
+      me.sit = false;
+      net.sendPos({ ...me, sit: false }, now + 200); // force-through the throttle
+    }
+
     if (role === 'drive' && !busy) {
       // driving: joystick moves the truck; camera & my avatar follow
       if (v.x || v.y) {
@@ -618,7 +627,20 @@ export function createCamp(ctx) {
     net.send({ t: 'tpos', x: Math.round(truck.x), y: Math.round(truck.y), d: truck.dir, relay: !isHost });
   }
 
+  /** Nearest placed camp chair on this map within sitting range. */
+  function nearbyChair() {
+    const list = (isHost ? save?.data.decor : decorList) || [];
+    let best = null, bd = 70 * 70;
+    for (const d of list) {
+      if (d.item !== 'chair' || (d.spot && d.spot !== map.id)) continue;
+      const dist = (me.x - d.x) ** 2 + (me.y - d.y) ** 2;
+      if (dist < bd) { bd = dist; best = d; }
+    }
+    return best;
+  }
+
   function updateActionLabel(role) {
+    if (me.sit) { input.setAction('STAND UP 🪑'); return; }
     if (role === 'drive') {
       const sign = map.roadSign;
       const nearSign = (truck.x - sign.x) ** 2 + (truck.y - sign.y) ** 2 < 220 ** 2;
@@ -632,26 +654,38 @@ export function createCamp(ctx) {
       if (nearTruck && truck.driving && !myTruckRole()) { input.setAction('RIDE 🛻'); return; }
     }
     const it = nearestInteractable(map, me.x, me.y, { night: isNight(), hasAuger: unlockedHas('auger') });
-    if (!it) input.setAction(null);
-    else if (it.kind === 'firepit') input.setAction(fireAct.firepitLabel());
-    else input.setAction(it.label);
+    if (it) {
+      input.setAction(it.kind === 'firepit' ? fireAct.firepitLabel() : it.label);
+      return;
+    }
+    input.setAction(nearbyChair() ? 'SIT 🪑' : null);
   }
 
+  let prevTruckX = 0, prevTruckY = 0;
   function render(now) {
     const view = [...players.values()].map((p) => ({
       x: p.me ? p.x : (p.rx ?? p.x),
       y: p.me ? p.y : (p.ry ?? p.y),
       m: p.me ? p.m : (p.rm ?? false),
       f: p.f, name: p.name, hue: p.hue, head: p.head, me: p.me,
+      sit: p.sit,
       hidden: p.mode !== 'walk',
       driving: p.me && p.mode === 'drive',
       fishing: p.me ? fishing.fishingView : p.fishing,
     }));
-    const truckView = truck ? {
-      x: truck.x, y: truck.y, dir: truck.dir, driving: truck.driving,
-      heads: truck.driving ? occupantHeads() : null,
-    } : null;
-    renderer.frame(now, view, world, truck?.driving ? truckView : null);
+    let truckView = null;
+    if (truck?.driving) {
+      const moving = Math.hypot(truck.x - prevTruckX, truck.y - prevTruckY) > 1.5;
+      truckView = {
+        x: truck.x, y: truck.y, dir: truck.dir, driving: true, moving,
+        heads: occupantHeads(),
+      };
+      renderer.headlights = nightFactor(world.tod) > 0.3
+        ? { x: truck.x, y: truck.y, dir: truck.dir } : null;
+    } else renderer.headlights = null;
+    prevTruckX = truck?.x ?? 0;
+    prevTruckY = truck?.y ?? 0;
+    renderer.frame(now, view, world, truckView);
   }
 
   function occupantHeads() {
@@ -686,6 +720,12 @@ export function createCamp(ctx) {
       onCastRequest: () => act('cast'),
       onOutcome: ({ fish, ok }) => {
         if (!ok) return;
+        if (fishing.bobber) {
+          renderer.addTransient({
+            type: 'fishArc', from: { ...fishing.bobber }, to: { x: me.x, y: me.y },
+            emoji: speciesInfo(fish.species)?.emoji || '🐟',
+          });
+        }
         fireAct.sessionFish.push(fish);
         act('caught', { fish });
         creditMyCatch(ctx.user(), fish, speciesInfo(fish.species)?.pts ?? 1);
@@ -771,13 +811,27 @@ export function createCamp(ctx) {
         return;
       }
       if (role === 'ride') return void act('honk');
+      if (me.sit) {
+        me.sit = false;
+        net.sendPos({ ...me }, performance.now() + 200);
+        return;
+      }
       if (truck && unlockedHas('truck')) {
         const nearTruck = (me.x - truck.x) ** 2 + (me.y - truck.y) ** 2 < 170 ** 2;
         if (nearTruck && !truck.driving) return void act('drive');
         if (nearTruck && truck.driving) return void act('ride');
       }
       const it = nearestInteractable(map, me.x, me.y, { night: isNight(), hasAuger: unlockedHas('auger') });
-      if (!it) return;
+      if (!it) {
+        const chair = nearbyChair();
+        if (chair) {
+          me.x = chair.x;
+          me.y = chair.y - 6;
+          me.sit = true;
+          net.sendPos({ ...me }, performance.now() + 200);
+        }
+        return;
+      }
       if (it.kind === 'locked') return void toast(it.reason, 2400, 'info');
       if (it.kind === 'shore') fishing.actionDown({ x: me.x, y: me.y });
       else if (it.kind === 'firepit') fireAct.firepitAction();

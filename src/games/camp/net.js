@@ -45,14 +45,15 @@ export class CampNet {
   sendPos(p, now) {
     if (!this.party) return;
     if (now - this.lastPosSent < 100) return;
-    const key = `${Math.round(p.x)},${Math.round(p.y)},${p.f},${p.m ? 1 : 0}`;
+    const s = p.sit ? 1 : 0;
+    const key = `${Math.round(p.x)},${Math.round(p.y)},${p.f},${p.m ? 1 : 0},${s}`;
     if (key === this.lastPos) return;
     this.lastPos = key;
     this.lastPosSent = now;
     // guests mark relay so the host forwards to other guests; the host's own
     // pos goes straight to everyone
-    if (this.isHost) this.send({ t: 'pos', id: 'host', x: p.x, y: p.y, f: p.f, m: p.m });
-    else this.send({ t: 'pos', x: p.x, y: p.y, f: p.f, m: p.m, relay: true });
+    if (this.isHost) this.send({ t: 'pos', id: 'host', x: p.x, y: p.y, f: p.f, m: p.m, s });
+    else this.send({ t: 'pos', x: p.x, y: p.y, f: p.f, m: p.m, s, relay: true });
   }
 
   detach() {
