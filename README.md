@@ -42,8 +42,13 @@ both need no camera/network/auth (testing).
 
 ## Campfire 🏕️
 
-Top-down walkable campsite rendered on canvas; your camper's head is your
-live video feed. Virtual joystick (or WASD) + one context action button:
+Walkable campsite you both roam mid-call. **Two renderers, same game**: a
+low-poly **3D view** (Three.js, lazy-loaded from CDN, all geometry
+procedural — third-person camera, video faces billboarded on your camper)
+and the original **classic top-down canvas view**. The 🗺️/🧊 button swaps
+them live and remembers your choice; weak devices or a WebGL failure fall
+back to classic automatically. Your camper's head is your live video feed in
+both. Virtual joystick (or WASD) + one context action button:
 CAST on the shore, CHOP at trees, STRIKE/ADD WOOD/GRILL/ROAST at the fire,
 MARKET at the trading post, STARGAZE at the tent after dark (10-minute
 day/night cycle). Fishing = hold-to-cast power, tap the bite (1.6s window),

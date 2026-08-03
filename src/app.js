@@ -44,7 +44,7 @@ const DEMO = new URLSearchParams(location.search).has('demo');
 // Bumped on every deploy (matches the ?v= on the script tag). Peers compare
 // builds on join: a stale cached client otherwise produces maddening
 // half-working sessions (e.g. the separate-worlds symptom).
-const BUILD = 'camp8';
+const BUILD = 'r1-3d';
 
 const AI_NAMES = ['Bot Nina', 'Bot Migs', 'Bot Cai'];
 const AI_DELAY_MS = [800, 1600];

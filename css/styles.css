@@ -587,6 +587,7 @@ button.action:disabled { opacity: 0.3; cursor: default; }
 }
 .camp-btn2 { top: calc(66px + var(--sat)); }
 .camp-btn3 { top: calc(118px + var(--sat)); }
+.camp-btn4 { top: calc(170px + var(--sat)); }
 
 .minigame {
   position: absolute; left: 50%; bottom: calc(140px + var(--sab)); transform: translateX(-50%);

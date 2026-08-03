@@ -8,7 +8,7 @@ import {
   clampMove, collides, nearestInteractable, waterAt,
   makeWorldState, tickWorld, nightFactor,
 } from './world.js';
-import { CampRenderer } from './render.js';
+import { createRenderer, getPreferredMode, setPreferredMode } from './renderer.js';
 import { CampInput } from './input.js';
 import { CampNet, Interp } from './net.js';
 import { Fishing, rollFish, speciesInfo, sellPrice } from './fishing.js';
@@ -31,6 +31,7 @@ export function createCamp(ctx) {
     roastGame: $('roastGame'), roastMallow: $('roastMallow'), roastFill: $('roastFill'),
     catchCard: $('catchCard'), log: $('campLog'), logList: $('campLogList'),
     btnLog: $('btnCampLog'), btnShop: $('btnCampShop'), btnLeave: $('btnLeaveCamp'),
+    btnView: $('btnCampView'),
     shop: $('campShop'), shopList: $('campShopList'), shopPoints: $('campShopPoints'),
     btnShopClose: $('btnShopClose'), starView: $('starView'), btnStarClose: $('btnStarClose'),
     market: $('campMarket'), marketCoins: $('marketCoins'), marketCreel: $('marketCreel'),
@@ -49,7 +50,7 @@ export function createCamp(ctx) {
   let players = new Map();
   let me = null;
   let sessionLog = [];
-  let rafId = 0, hostTick = 0, lastFrame = 0, frameFlip = false;
+  let rafId = 0, hostTick = 0, lastFrame = 0, frameFlip = false, switching = false;
   let decorList = [], unlockedList = [];
   let guestPoints = 0, guestXp = 0, guestSpot = 'lakeside';
   // truck: parked at the map's spot until someone drives it
@@ -141,7 +142,40 @@ export function createCamp(ctx) {
       + (rows.length ? rows.join('') : '<div class="log-row">Nothing yet — go fish! 🎣</div>');
   }
 
+  function renderViewBtn() {
+    if (!els.btnView) return;
+    els.btnView.textContent = renderer?.mode === '3d' ? '🧊' : '🗺️';
+    els.btnView.title = renderer?.mode === '3d' ? '3D view — tap for classic' : 'Classic view — tap for 3D';
+  }
+
+  /** A canvas keeps its first context type forever, so swapping renderers
+   *  means swapping the element too. */
+  function freshCanvas() {
+    const next = els.canvas.cloneNode(false);
+    els.canvas.replaceWith(next);
+    els.canvas = next;
+    return next;
+  }
+
+  /** Hot-swap renderers without disturbing the sim. */
+  async function switchView() {
+    if (switching) return;
+    switching = true;
+    const next = renderer?.mode === '3d' ? '2d' : '3d';
+    setPreferredMode(next);
+    renderer?.destroy();
+    renderer = await createRenderer(freshCanvas(), {
+      mode: next,
+      onFallback: (why) => toast(`3D unavailable (${why}) — classic view`, 4000, 'info'),
+    });
+    repaintBg();
+    renderViewBtn();
+    switching = false;
+    toast(renderer.mode === '3d' ? '🧊 3D view' : '🗺️ Classic view', 1800, 'info');
+  }
+
   function repaintBg() {
+    if (!renderer) return;
     renderer.paintBackground(map,
       (isHost ? save.data.decor : decorList).filter((d) => !d.spot || d.spot === map.id),
       isHost ? save.data.unlocked : unlockedList);
@@ -663,6 +697,7 @@ export function createCamp(ctx) {
 
   let prevTruckX = 0, prevTruckY = 0;
   function render(now) {
+    if (!renderer || switching) return;
     const view = [...players.values()].map((p) => ({
       x: p.me ? p.x : (p.rx ?? p.x),
       y: p.me ? p.y : (p.ry ?? p.y),
@@ -700,7 +735,7 @@ export function createCamp(ctx) {
 
   // ------------------------------------------------------------ lifecycle
 
-  function start({ soloMode }) {
+  async function start({ soloMode }) {
     if (active) return;
     active = true;
     isHost = ctx.iAmAuthority();
@@ -712,9 +747,14 @@ export function createCamp(ctx) {
     truck = null;
     traveling = false;
 
-    renderer = new CampRenderer(els.canvas);
     map = getMap('lakeside');
+    renderer = await createRenderer(freshCanvas(), {
+      mode: getPreferredMode(),
+      onFallback: (why) => toast(`3D unavailable (${why}) — classic view`, 4000, 'info'),
+    });
+    if (!active) { renderer.destroy(); return; } // left during the lazy load
     renderer.paintBackground(map, []);
+    renderViewBtn();
     input = new CampInput(els.hud, els.action);
     fishing = new Fishing(els, {
       onCastRequest: () => act('cast'),
@@ -852,6 +892,7 @@ export function createCamp(ctx) {
     els.btnShop.onclick = () => decorUI.openShop();
     els.btnShopClose.onclick = () => decorUI.closeShop();
     els.btnStarClose.onclick = () => stars.hide();
+    if (els.btnView) els.btnView.onclick = switchView;
     els.btnMarketClose.onclick = () => els.market.classList.add('hidden');
     els.btnTravelClose.onclick = () => els.travel.classList.add('hidden');
     els.btnSellAll.onclick = () => {
@@ -889,8 +930,9 @@ export function createCamp(ctx) {
     fireAct.cancel();
     if (stars.open) stars.hide();
     avatars.stop();
-    input.destroy();
-    renderer.destroy();
+    input?.destroy();
+    renderer?.destroy();
+    renderer = null;
     net.detach();
     save?.stop();
     els.layer.classList.add('hidden');
@@ -940,6 +982,10 @@ export function createCamp(ctx) {
       act,
       pump(now) { const was = active; if (was) { frameFlip = true; loop(now); frameFlip = true; loop(now + 34); } },
       net: () => net,
+      renderer: () => renderer,
+      mode: () => renderer?.mode,
+      switchView,
+      stats: () => renderer?.stats?.() ?? { mode: renderer?.mode },
       input: () => input,
       fishing: () => fishing,
       fire: () => fireAct,
