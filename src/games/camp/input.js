@@ -10,6 +10,7 @@ export class CampInput {
     this.joy = null; // {baseX, baseY, dx, dy, pointerId, baseEl, nubEl}
     this.onActionDown = null;
     this.onActionUp = null;
+    this.intercept = null; // (e) => boolean — claim a tap before the joystick spawns
     this._listeners = [];
 
     const on = (el, ev, fn, opts) => {
@@ -34,6 +35,7 @@ export class CampInput {
     // --- floating joystick (left/bottom region, not over the action button)
     on(this.hud, 'pointerdown', (e) => {
       if (e.target.closest('button')) return;
+      if (this.intercept?.(e)) return; // e.g. decor placement claims the tap
       if (this.joy) return;
       const base = document.createElement('div');
       base.className = 'joy-base';

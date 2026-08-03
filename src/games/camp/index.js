@@ -786,8 +786,9 @@ export function createCamp(ctx) {
       else if (it.kind === 'tent') stars.show(Object.keys(isHost ? save.data.constellations : {}));
     };
     input.onActionUp = () => { fishing.actionUp(); fireAct.actionUp(); };
-
-    els.canvas.addEventListener('pointerdown', onCanvasTap);
+    // The HUD covers the canvas, so ground taps arrive on the HUD — decor
+    // placement claims them via the intercept before the joystick spawns.
+    input.intercept = (e) => decorUI.onCanvasTap(e.clientX, e.clientY);
 
     els.btnLeave.onclick = () => {
       if (isHost) { net.send({ t: 'end' }); stop('ended'); }
@@ -818,10 +819,6 @@ export function createCamp(ctx) {
     toast(soloMode ? 'Welcome to camp 🏕️ (solo)' : 'Welcome to camp 🏕️', 2600, 'info');
   }
 
-  function onCanvasTap(e) {
-    decorUI?.onCanvasTap(e.clientX, e.clientY);
-  }
-
   function onVis() {
     if (document.hidden) cancelAnimationFrame(rafId);
     else if (active) rafId = requestAnimationFrame(loop);
@@ -834,7 +831,6 @@ export function createCamp(ctx) {
     cancelAnimationFrame(rafId);
     clearInterval(hostTick);
     document.removeEventListener('visibilitychange', onVis);
-    els.canvas.removeEventListener('pointerdown', onCanvasTap);
     fishing.cancel();
     fireAct.cancel();
     if (stars.open) stars.hide();
