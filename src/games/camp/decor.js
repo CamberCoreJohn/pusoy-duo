@@ -11,7 +11,24 @@ export const SHOP = [
   { item: 'flag', name: 'Camp Flag', emoji: '🚩', cost: 8 },
 ];
 
+// One-time equipment unlocks (not placeable): gear effects + the truck.
+export const EQUIPMENT = [
+  { item: 'rod2', name: 'Pro Rod', emoji: '🎣', cost: 60, desc: 'wider reel zone' },
+  { item: 'lure', name: 'Lucky Lure', emoji: '✨', cost: 45, desc: 'better bites' },
+  { item: 'truck', name: 'Truck + Rooftop Tent', emoji: '🛻', cost: 250, desc: 'parks by the tent' },
+];
+
 export const shopItem = (id) => SHOP.find((s) => s.item === id);
+export const equipItem = (id) => EQUIPMENT.find((s) => s.item === id);
+
+/** Host-side validation of an equipment purchase. */
+export function canBuy(campData, item) {
+  const e = equipItem(item);
+  if (!e) return { ok: false, reason: 'Unknown equipment' };
+  if (campData.unlocked.includes(item)) return { ok: false, reason: 'Already owned' };
+  if (campData.points < e.cost) return { ok: false, reason: 'Not enough coins' };
+  return { ok: true, cost: e.cost };
+}
 
 export const MAX_DECOR = 60;
 

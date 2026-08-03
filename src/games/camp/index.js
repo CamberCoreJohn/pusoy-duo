@@ -10,11 +10,11 @@ import {
 import { CampRenderer } from './render.js';
 import { CampInput } from './input.js';
 import { CampNet, Interp } from './net.js';
-import { Fishing, rollFish, speciesInfo } from './fishing.js';
+import { Fishing, rollFish, speciesInfo, sellPrice } from './fishing.js';
 import { FireActions, FEED_AMOUNT, STRIKE_LIGHT_LVL } from './fire.js';
 import { CampSave, creditMyCatch } from './save.js';
 import { StarView } from './stars.js';
-import { DecorUI, canPlace, shopItem } from './decor.js';
+import { DecorUI, canPlace, shopItem, EQUIPMENT, equipItem, canBuy } from './decor.js';
 
 const RARE_TIERS = new Set(['rare', 'epic']);
 
@@ -31,6 +31,8 @@ export function createCamp(ctx) {
     btnLog: $('btnCampLog'), btnShop: $('btnCampShop'), btnLeave: $('btnLeaveCamp'),
     shop: $('campShop'), shopList: $('campShopList'), shopPoints: $('campShopPoints'),
     btnShopClose: $('btnShopClose'), starView: $('starView'), btnStarClose: $('btnStarClose'),
+    market: $('campMarket'), marketCoins: $('marketCoins'), marketCreel: $('marketCreel'),
+    btnSellAll: $('btnSellAll'), marketGear: $('marketGear'), btnMarketClose: $('btnMarketClose'),
   };
 
   const net = new CampNet();
@@ -86,10 +88,12 @@ export function createCamp(ctx) {
   }
 
   const isNight = () => nightFactor(world.tod) > 0.5;
-  const pts = () => save?.data.points ?? 0;
+  const pts = () => (isHost ? save?.data.points ?? 0 : guestPoints);
+  const unlockedHas = (item) => (isHost ? save?.data.unlocked : unlockedList)?.includes(item);
 
   function refreshStatus() {
-    els.status.textContent = `🪵 ${fireAct.wood} · ⭐ ${pts()}${save?.data.fire.streak ? ` · 🔥×${save.data.fire.streak}` : ''}`;
+    const creel = fireAct.sessionFish.length;
+    els.status.textContent = `🪵 ${fireAct.wood}${creel ? ` · 🐟 ${creel}` : ''} · 🪙 ${pts()}${save?.data.fire.streak ? ` · 🔥×${save.data.fire.streak}` : ''}`;
   }
 
   function logEntry(e) {
@@ -122,16 +126,33 @@ export function createCamp(ctx) {
     const name = fromPeer ? (players.get(fromPeer)?.name ?? 'Camper') : me.name;
     switch (msg.kind) {
       case 'cast': {
-        const fish = rollFish();
+        const fish = rollFish(Math.random, { lucky: save?.data.unlocked.includes('lure') });
         if (fromPeer) net.send({ t: 'fish', ...fish }, fromPeer);
         else fishing.onFishAssigned(fish);
         break;
       }
       case 'caught': {
-        const sp = speciesInfo(msg.fish.species);
-        save?.update((d) => { d.points += sp?.pts ?? 1; });
+        // no coins yet — fish go in the creel; the market pays
         save?.logCatch({ species: msg.fish.species, size: msg.fish.size, rarity: msg.fish.rarity, byName: name });
-        broadcastEv({ kind: 'catch', species: msg.fish.species, size: msg.fish.size, rarity: msg.fish.rarity, byName: name, by: who, points: pts() });
+        broadcastEv({ kind: 'catch', species: msg.fish.species, size: msg.fish.size, rarity: msg.fish.rarity, byName: name, by: who });
+        break;
+      }
+      case 'sell': {
+        const total = (msg.creel || []).reduce((s, f) => s + sellPrice(f.species, f.size), 0);
+        if (total <= 0) break;
+        save?.update((d) => { d.points += total; });
+        broadcastEv({ kind: 'sold', byName: name, count: msg.creel.length, total, points: pts() });
+        break;
+      }
+      case 'buy': {
+        const v = canBuy(save.data, msg.item);
+        if (!v.ok) {
+          if (fromPeer) net.send({ t: 'ev', kind: 'reject', msg: v.reason }, fromPeer);
+          else toast(v.reason);
+          break;
+        }
+        save.update((d) => { d.points -= v.cost; d.unlocked.push(msg.item); });
+        broadcastEv({ kind: 'gear', item: msg.item, byName: name, points: pts(), unlocked: save.data.unlocked });
         break;
       }
       case 'feed':
@@ -218,8 +239,20 @@ export function createCamp(ctx) {
         break;
       case 'decor':
         if (!isHost) decorList.push({ item: ev.item, x: ev.x, y: ev.y });
-        renderer.paintBackground(isHost ? save.data.decor : decorList);
+        repaintBg();
         break;
+      case 'sold':
+        toast(`🪙 ${ev.byName} sold ${ev.count} fish for ${ev.total} coins!`, 2600, 'info');
+        break;
+      case 'gear': {
+        if (!isHost) unlockedList = ev.unlocked || [...unlockedList, ev.item];
+        const e = equipItem(ev.item);
+        toast(`${e?.emoji || '🎒'} ${ev.byName} bought the ${e?.name || ev.item}!`, 2800, 'info');
+        ctx.fx.confettiBurst(innerWidth / 2, innerHeight * 0.45, 26);
+        fishing.setGear(isHost ? save.data.unlocked : unlockedList);
+        repaintBg();
+        break;
+      }
       case 'reject': toast(ev.msg); break;
     }
     if (typeof ev.points === 'number' && save) save.data.points = ev.points;
@@ -227,8 +260,40 @@ export function createCamp(ctx) {
     refreshStatus();
   }
 
-  let decorList = []; // guest-side mirror of placed decor
+  let decorList = [];    // guest-side mirror of placed decor
+  let unlockedList = []; // guest-side mirror of owned equipment
   let guestPoints = 0;
+
+  function repaintBg() {
+    renderer.paintBackground(
+      isHost ? save.data.decor : decorList,
+      isHost ? save.data.unlocked : unlockedList);
+  }
+
+  // ---------------------------------------------------------- market UI
+
+  function openMarket() {
+    els.marketCoins.textContent = `🪙 ${pts()} coins`;
+    const creel = fireAct.sessionFish;
+    els.marketCreel.replaceChildren(...(creel.length ? creel.map((f) => {
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      const sp = speciesInfo(f.species);
+      row.innerHTML = `${sp?.emoji || '🐟'} ${sp?.name} · ${f.size}cm <b style="float:right">🪙 ${sellPrice(f.species, f.size)}</b>`;
+      return row;
+    }) : [(() => { const d = document.createElement('div'); d.className = 'log-row'; d.textContent = 'Empty — catch something first! 🎣'; return d; })()]));
+    els.btnSellAll.disabled = creel.length === 0;
+    els.marketGear.replaceChildren(...EQUIPMENT.map((e) => {
+      const owned = unlockedHas(e.item);
+      const row = document.createElement('button');
+      row.className = 'shop-row';
+      row.innerHTML = `<span>${e.emoji} ${e.name} <small style="opacity:.6">${e.desc}</small></span><span class="cost">${owned ? 'owned ✓' : '🪙 ' + e.cost}</span>`;
+      row.disabled = owned || pts() < e.cost;
+      row.onclick = () => { act('buy', { item: e.item }); els.market.classList.add('hidden'); };
+      return row;
+    }));
+    els.market.classList.remove('hidden');
+  }
 
   // ------------------------------------------------------------ net handlers
 
@@ -244,6 +309,7 @@ export function createCamp(ctx) {
         t: 'init',
         world: { fire: world.fire, tod: world.tod },
         decor: save.data.decor,
+        unlocked: save.data.unlocked,
         points: pts(),
         catches: sessionLog.slice(0, 10),
         players: [...players.values()].filter((p) => p.id !== fromPeer).map((p) => ({
@@ -260,9 +326,11 @@ export function createCamp(ctx) {
       if (isHost) return;
       world = { ...makeWorldState(), ...msg.world };
       decorList = msg.decor || [];
+      unlockedList = msg.unlocked || [];
       guestPoints = msg.points || 0;
       sessionLog = msg.catches || [];
-      renderer.paintBackground(decorList);
+      repaintBg();
+      fishing.setGear(unlockedList);
       if (me && msg.you) { me.x = msg.you.x; me.y = msg.you.y; me.hue = msg.you.hue; }
       for (const p of msg.players || []) addPlayer(p.id, p.name, p.hue, p.x, p.y);
       syncAvatars();
@@ -409,7 +477,8 @@ export function createCamp(ctx) {
     save = new CampSave(isHost ? (ctx.user()?.uid ?? null) : null);
     if (isHost) {
       save.load().then(() => {
-        renderer.paintBackground(save.data.decor);
+        repaintBg();
+        fishing.setGear(save.data.unlocked);
         refreshStatus();
       });
       hostTick = setInterval(() => {
@@ -436,6 +505,7 @@ export function createCamp(ctx) {
       if (it.kind === 'shore') fishing.actionDown({ x: me.x, y: me.y });
       else if (it.kind === 'firepit') fireAct.firepitAction();
       else if (it.kind === 'tree') fireAct.chop();
+      else if (it.kind === 'market') openMarket();
       else if (it.kind === 'tent') stars.show(Object.keys(isHost ? save.data.constellations : {}));
     };
     input.onActionUp = () => { fishing.actionUp(); fireAct.actionUp(); };
@@ -452,6 +522,14 @@ export function createCamp(ctx) {
     els.btnShop.onclick = () => decorUI.openShop();
     els.btnShopClose.onclick = () => decorUI.closeShop();
     els.btnStarClose.onclick = () => stars.hide();
+    els.btnMarketClose.onclick = () => els.market.classList.add('hidden');
+    els.btnSellAll.onclick = () => {
+      const creel = fireAct.sessionFish.splice(0); // hand the whole creel over
+      if (creel.length === 0) return;
+      act('sell', { creel: creel.map((f) => ({ species: f.species, size: f.size })) });
+      els.market.classList.add('hidden');
+      refreshStatus();
+    };
 
     document.addEventListener('visibilitychange', onVis);
 
@@ -489,7 +567,7 @@ export function createCamp(ctx) {
     net.detach();
     save?.stop();
     els.layer.classList.add('hidden');
-    for (const id of ['campLog', 'campShop']) $(id)?.classList.add('hidden');
+    for (const id of ['campLog', 'campShop', 'campMarket']) $(id)?.classList.add('hidden');
     ctx.exitGameMode();
     ctx.onStopped?.(reason, fromRemote);
   }

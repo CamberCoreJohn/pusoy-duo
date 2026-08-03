@@ -4,7 +4,7 @@
 //
 // frame(now) is manually callable so the sim can be verified without rAF.
 
-import { WORLD, LAKE, FIREPIT, TENT, TREES, nightFactor } from './world.js';
+import { WORLD, LAKE, FIREPIT, TENT, TREES, MARKET, TRUCK_SPOT, nightFactor } from './world.js';
 
 const DPR = Math.min(devicePixelRatio || 1, 2);
 
@@ -33,8 +33,8 @@ export class CampRenderer {
     this.scale = Math.max(innerWidth, innerHeight) * DPR / 1150;
   }
 
-  /** Paint the static scene (grass, lake, trees, firepit, tent, decor). */
-  paintBackground(decor = []) {
+  /** Paint the static scene (grass, lake, trees, firepit, tent, market, decor). */
+  paintBackground(decor = [], unlocked = []) {
     const c = this.bg.getContext('2d');
     const { w, h } = WORLD;
     // grass
@@ -112,7 +112,26 @@ export class CampRenderer {
       circle(c, t.x - t.r * 0.4, t.y - t.r * 0.25, t.r * 0.62);
       circle(c, t.x + t.r * 0.45, t.y - t.r * 0.35, t.r * 0.55);
     }
-    // decor (P4): painted into the background so it costs nothing per frame
+    // ranger's trading post: counter, awning, sign
+    c.fillStyle = '#6b4f33';
+    c.fillRect(MARKET.x, MARKET.y + 46, MARKET.w, MARKET.h - 46);
+    c.fillStyle = '#4e3a26';
+    c.fillRect(MARKET.x - 6, MARKET.y + 42, MARKET.w + 12, 12);
+    for (let i = 0; i <= 6; i++) { // striped awning
+      c.fillStyle = i % 2 ? '#c94f4f' : '#f0e6d2';
+      c.fillRect(MARKET.x - 10 + i * ((MARKET.w + 20) / 7), MARKET.y, (MARKET.w + 20) / 7, 34);
+    }
+    c.fillStyle = '#2b2b31';
+    c.fillRect(MARKET.x + MARKET.w / 2 - 34, MARKET.y - 26, 68, 22);
+    c.fillStyle = '#ffd778';
+    c.font = '700 17px Outfit, system-ui';
+    c.textAlign = 'center';
+    c.fillText('🪙 MARKET', MARKET.x + MARKET.w / 2, MARKET.y - 9);
+
+    // the truck + rooftop tent, once the campers have earned it
+    if (unlocked.includes('truck')) drawTruck(c, TRUCK_SPOT);
+
+    // decor: painted into the background so it costs nothing per frame
     for (const d of decor) drawDecor(c, d);
   }
 
@@ -310,6 +329,41 @@ function makeGlowSprite() {
   c.fillStyle = grad;
   c.fillRect(0, 0, 256, 256);
   return g;
+}
+
+function drawTruck(c, spot) {
+  const { x, y, w, h } = spot;
+  c.fillStyle = 'rgba(0,0,0,0.25)';
+  ellipse(c, x + w / 2, y + h - 4, w * 0.52, 14);
+  // body
+  c.fillStyle = '#3f6f8f';
+  c.fillRect(x + 10, y + h - 58, w - 20, 34);
+  c.fillStyle = '#345d78';
+  c.fillRect(x + w - 74, y + h - 84, 60, 28); // cab
+  c.fillStyle = '#9fd3ee';
+  c.fillRect(x + w - 66, y + h - 79, 34, 18); // windshield
+  // wheels
+  c.fillStyle = '#1b1b20';
+  circle(c, x + 42, y + h - 20, 16);
+  circle(c, x + w - 46, y + h - 20, 16);
+  c.fillStyle = '#6e6e78';
+  circle(c, x + 42, y + h - 20, 7);
+  circle(c, x + w - 46, y + h - 20, 7);
+  // rooftop tent on the bed
+  c.fillStyle = '#d97941';
+  c.beginPath();
+  c.moveTo(x + 16, y + h - 58);
+  c.lineTo(x + 58, y + h - 96);
+  c.lineTo(x + 100, y + h - 58);
+  c.closePath();
+  c.fill();
+  c.fillStyle = '#b85f2e';
+  c.beginPath();
+  c.moveTo(x + 40, y + h - 58);
+  c.lineTo(x + 58, y + h - 80);
+  c.lineTo(x + 76, y + h - 58);
+  c.closePath();
+  c.fill();
 }
 
 function drawDecor(c, d) {

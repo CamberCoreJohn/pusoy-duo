@@ -12,6 +12,8 @@ const SHORE_BAND = 1.32; // ellipse-test values in (1, SHORE_BAND] = fishable sh
 
 export const FIREPIT = { x: 880, y: 660, r: 46 };
 export const TENT = { x: 380, y: 360, w: 200, h: 160 };
+export const MARKET = { x: 1560, y: 430, w: 190, h: 120 }; // ranger's trading post
+export const TRUCK_SPOT = { x: 170, y: 480, w: 230, h: 120 }; // unlockable 🛻
 
 export const TREES = [
   { x: 220, y: 820, r: 42 }, { x: 360, y: 1080, r: 48 }, { x: 150, y: 1240, r: 40 },
@@ -43,6 +45,8 @@ export function collides(x, y) {
   if (fd < (FIREPIT.r + PLAYER_R - 8) ** 2) return true;
   if (x > TENT.x - PLAYER_R + 8 && x < TENT.x + TENT.w + PLAYER_R - 8
     && y > TENT.y - PLAYER_R + 8 && y < TENT.y + TENT.h + PLAYER_R - 8) return true;
+  if (x > MARKET.x - PLAYER_R + 8 && x < MARKET.x + MARKET.w + PLAYER_R - 8
+    && y > MARKET.y - PLAYER_R + 8 && y < MARKET.y + MARKET.h + PLAYER_R - 8) return true;
   return false;
 }
 
@@ -63,6 +67,8 @@ const near = (x, y, px, py, r) => (x - px) ** 2 + (y - py) ** 2 < r * r;
 export function nearestInteractable(x, y, state = {}) {
   const lt = lakeTest(x, y);
   if (lt > 1 && lt <= SHORE_BAND) return { kind: 'shore', label: 'CAST 🎣' };
+  const mcx = MARKET.x + MARKET.w / 2, mcy = MARKET.y + MARKET.h / 2;
+  if (near(x, y, mcx, mcy, 175)) return { kind: 'market', label: 'MARKET 🪙' };
   if (near(x, y, FIREPIT.x, FIREPIT.y, FIREPIT.r + 76)) return { kind: 'firepit', label: null };
   for (const t of TREES) {
     if (near(x, y, t.x, t.y, t.r + 60)) return { kind: 'tree', label: 'CHOP 🌲' };

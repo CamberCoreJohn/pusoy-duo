@@ -45,9 +45,13 @@ both need no camera/network/auth (testing).
 Top-down walkable campsite rendered on canvas; your camper's head is your
 live video feed. Virtual joystick (or WASD) + one context action button:
 CAST on the shore, CHOP at trees, STRIKE/ADD WOOD/GRILL/ROAST at the fire,
-STARGAZE at the tent after dark (10-minute day/night cycle). Fishing =
-hold-to-cast power, tap the bite, keep the reel needle in the zone; rarities
-up to the Arowana 🐉 (and the Old Boot). The campsite **persists**: fish log
+MARKET at the trading post, STARGAZE at the tent after dark (10-minute
+day/night cycle). Fishing = hold-to-cast power, tap the bite (1.6s window),
+keep the reel needle in the zone (snapping takes sustained neglect, not one
+slip); rarities up to the Arowana 🐉 (and the Old Boot). Catches fill your
+creel — grill them for a feast or **sell them at the market** for coins 🪙,
+then buy equipment: the Pro Rod (wider reel zone), Lucky Lure (better
+bites), or the Truck + Rooftop Tent 🛻 that parks itself by your tent. The campsite **persists**: fish log
 + records, campfire streak, traced constellations, camp points, and placed
 decorations live in Firestore under `campsites/{hostUid}` (host is the
 authority and sole writer; localStorage fallback for signed-out play). The

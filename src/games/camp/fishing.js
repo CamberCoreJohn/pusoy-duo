@@ -19,20 +19,33 @@ export const SPECIES = [
 
 const FIGHT = { common: 1, uncommon: 1.35, rare: 1.8, epic: 2.4, junk: 0.6 };
 
-/** Host-side roll. rand injectable for tests. */
-export function rollFish(rand = Math.random) {
-  const total = SPECIES.reduce((s, f) => s + f.w, 0);
-  let r = rand() * total;
-  let sp = SPECIES[0];
-  for (const f of SPECIES) { r -= f.w; if (r <= 0) { sp = f; break; } }
+/** Host-side roll. rand injectable; lucky lure rerolls junk/common once. */
+export function rollFish(rand = Math.random, { lucky = false } = {}) {
+  const pick = () => {
+    const total = SPECIES.reduce((s, f) => s + f.w, 0);
+    let r = rand() * total;
+    for (const f of SPECIES) { r -= f.w; if (r <= 0) return f; }
+    return SPECIES[0];
+  };
+  let sp = pick();
+  if (lucky && (sp.rarity === 'junk' || sp.rarity === 'common') && rand() < 0.5) sp = pick();
   const size = Math.round(sp.min + rand() * (sp.max - sp.min));
-  const biteMs = 2000 + Math.round(rand() * 8000);
+  const biteMs = 1500 + Math.round(rand() * 5000);
   return { species: sp.id, size, rarity: sp.rarity, biteMs };
 }
 
 export const speciesInfo = (id) => SPECIES.find((s) => s.id === id);
 
-const HOOK_WINDOW_MS = 750;
+/** Market value: base by species, scaled up to ~2x by size within its range. */
+export function sellPrice(species, size) {
+  const sp = speciesInfo(species);
+  if (!sp) return 1;
+  const k = (size - sp.min) / Math.max(1, sp.max - sp.min); // 0..1
+  return Math.max(1, Math.round(sp.pts * (1 + k)));
+}
+
+const HOOK_WINDOW_MS = 1600;   // generous — cozy game, not a reflex test
+const SNAP_GRACE_MS = 600;     // tension must sit at an extreme this long to snap
 
 export class Fishing {
   /**
@@ -46,6 +59,14 @@ export class Fishing {
     this.pending = null; // fish rolled by host
     this.bobber = null;
     this.timers = [];
+    this.zone = [25, 80]; // safe tension band; the Pro Rod widens it
+  }
+
+  /** Apply owned gear (called when equipment changes). */
+  setGear(unlocked) {
+    this.zone = unlocked?.includes('rod2') ? [18, 87] : [25, 80];
+    const z = this.els.reelGame?.querySelector('.reel-zone');
+    if (z) { z.style.left = this.zone[0] + '%'; z.style.width = (this.zone[1] - this.zone[0]) + '%'; }
   }
 
   get active() { return this.state !== 'idle'; }
@@ -119,22 +140,30 @@ export class Fishing {
     this.reelHold = false;
     this.tension = 50;
     this.progress = 0;
+    this.snapMs = 0;
     const fight = FIGHT[this.pending.rarity] ?? 1;
     this.els.reelGame.classList.remove('hidden');
     this.hooks.setPrompt('REEL! 🎣');
     let pull = 0;
     this.reelAnim = setInterval(() => {
-      // fish yanks the tension down in bursts; holding reels it up
-      if (Math.random() < 0.06 * fight) pull = 18 + Math.random() * 26 * fight;
-      pull *= 0.9;
-      this.tension += (this.reelHold ? 2.6 : -1.6) - pull * 0.09;
+      // fish yanks the tension down in occasional bursts; holding reels it up.
+      // Gentle drift both ways — losing should take sustained neglect, not a
+      // moment's hesitation.
+      if (Math.random() < 0.035 * fight) pull = 10 + Math.random() * 16 * fight;
+      pull *= 0.92;
+      this.tension += (this.reelHold ? 1.5 : -0.9) - pull * 0.06;
       this.tension = Math.max(0, Math.min(100, this.tension));
-      const inZone = this.tension > 28 && this.tension < 78;
-      if (inZone) this.progress += 0.9;
+      const [zLo, zHi] = this.zone;
+      const inZone = this.tension > zLo && this.tension < zHi;
+      if (inZone) this.progress += 1.0;
+      else this.progress = Math.max(0, this.progress - 0.15);
+      // snapping requires sitting at an extreme for a while (with a warning)
+      const atExtreme = this.tension <= 1 || this.tension >= 99;
+      this.snapMs = atExtreme ? this.snapMs + 33 : 0;
       this.els.reelNeedle.style.left = this.tension + '%';
       this.els.reelProgress.style.width = Math.min(100, this.progress) + '%';
       this.els.reelGame.classList.toggle('danger', !inZone);
-      if (this.tension <= 0.5 || this.tension >= 99.5) this._reelEnd(false);
+      if (this.snapMs >= SNAP_GRACE_MS) this._reelEnd(false);
       else if (this.progress >= 100) this._reelEnd(true);
     }, 33);
     return true;
