@@ -12,11 +12,17 @@ const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module
 
 let THREE = null;
 
+// Isometric pixel-art look: render tiny, upscale hard. `pix` is how many
+// screen pixels each rendered pixel becomes — the bigger, the chunkier (and
+// the cheaper, which is why this runs well next to a video call).
 const TIER = {
-  low: { shadows: false, treeSeg: 6, pixelRatio: 1, flora: 0, bend: 0.00016 },
-  med: { shadows: false, treeSeg: 8, pixelRatio: 1.25, flora: 90, bend: 0.00016 },
-  high: { shadows: true, treeSeg: 10, pixelRatio: 1.5, flora: 190, bend: 0.00016 },
+  low: { shadows: false, treeSeg: 6, pix: 5, flora: 60, bend: 0 },
+  med: { shadows: true, treeSeg: 7, pix: 4, flora: 130, bend: 0 },
+  high: { shadows: true, treeSeg: 8, pix: 3.5, flora: 220, bend: 0 },
 };
+
+// World units visible across the screen's short axis — the iso "zoom".
+const ISO_VIEW = 1150;
 
 const hex = (s) => new THREE.Color(s);
 
@@ -24,11 +30,13 @@ const hex = (s) => new THREE.Color(s);
 // wanted contrast, the 3D one wants sunshine.
 // Vivid, high-key, poster-flat — closer to the game's own palette than the
 // muted naturalism the 2D map data uses.
+// Deep, saturated pixel-RPG palette — rich greens and browns that let warm
+// firelight pool against them after dark.
 const CUTE = {
-  lakeside: { grass: '#7ed957', trunk: '#c08040', canopy: ['#5cc94f', '#8ee86a'], water: ['#2aa8e8', '#1a7fc4'], shallow: '#7fe3ee', sand: '#f7e3a6', path: '#e5c188', sky: '#63cdf5' },
-  forest: { grass: '#5fbf52', trunk: '#a06a3c', canopy: ['#43ad4e', '#74d868'], water: ['#2aa8e8', '#1a7fc4'], shallow: '#7fe3ee', sand: '#eddca4', path: '#d7b47f', sky: '#63cdf5' },
-  beach: { grass: '#f7e2a4', trunk: '#c2884a', canopy: ['#5cc94f', '#8ee86a'], water: ['#22a6e6', '#1580c0'], shallow: '#86ecef', sand: '#fdf0c4', path: '#eed49a', sky: '#63cdf5' },
-  mountain: { grass: '#f4fafe', trunk: '#96694c', canopy: ['#63ab84', '#f0f8fd'], water: ['#79d6f2', '#4fb6dd'], shallow: '#c4f0fb', sand: '#fbfeff', path: '#dde7ee', sky: '#9fdcf8' },
+  lakeside: { grass: '#4b7a35', trunk: '#6b4526', canopy: ['#2f5f2e', '#437a38'], water: ['#1d5f86', '#123f5e'], shallow: '#2f88a8', sand: '#a98d5c', path: '#7a6038', sky: '#12305c' },
+  forest: { grass: '#3d6b30', trunk: '#5c3c22', canopy: ['#26512a', '#376b33'], water: ['#1d5f86', '#123f5e'], shallow: '#2f88a8', sand: '#947a50', path: '#6b5533', sky: '#12305c' },
+  beach: { grass: '#b39a63', trunk: '#7a5230', canopy: ['#356b34', '#4b8a3f'], water: ['#1a6b96', '#0f4668'], shallow: '#3699b8', sand: '#c9ae76', path: '#a68d5c', sky: '#123a63' },
+  mountain: { grass: '#c3d2dc', trunk: '#5a4433', canopy: ['#3d6b57', '#cfe0e8'], water: ['#4a90ad', '#2d6a86'], shallow: '#6fb4cc', sand: '#d6e3ea', path: '#9aa8b2', sky: '#0d2a52' },
 };
 
 /**
@@ -86,21 +94,25 @@ export class CampRenderer3D {
       canvas, antialias: tier === 'high', alpha: false,
       powerPreference: 'low-power', preserveDrawingBuffer: true, // debug pixel probes
     });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.q.pixelRatio));
+    this.renderer.setPixelRatio(1); // we downscale ourselves for the pixel look
     this.renderer.shadowMap.enabled = this.q.shadows;
 
     this.scene = new THREE.Scene();
-    // barely any haze — the look is crisp and sunny, not atmospheric
-    this.scene.fog = new THREE.Fog(0x8fd8f2, 2200, 4200);
-    this.camera = new THREE.PerspectiveCamera(34, 1, 1, 6000);
+    this.scene.fog = null; // pixel art doesn't fade out, it just ends
+    // Orthographic camera locked to the classic 2:1 isometric angle. No
+    // perspective, no rotation — the whole look depends on that being fixed.
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -4000, 8000);
+    this.isoDir = new THREE.Vector3(1, 1.05, 1).normalize();
     this.camGoal = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
 
-    // lighting: hemisphere ambient + a sun that swings with the clock
-    // bright and cheerful, but warm enough that greens stay green
-    this.hemi = new THREE.HemisphereLight(0xcbe6ff, 0x8f9a5e, 1.05);
+    // Moody key lighting: a restrained ambient so warm lights actually read
+    // as pools of light against the dark, like the reference art.
+    // NOTE: three r155+ uses physical light units — these read ~3x higher
+    // than the old defaults for the same on-screen brightness.
+    this.hemi = new THREE.HemisphereLight(0x9ec0e8, 0x2d3a24, 2.4);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff4dc, 1.35);
+    this.sun = new THREE.DirectionalLight(0xffe7bd, 2.6);
     this.sun.castShadow = this.q.shadows;
     if (this.q.shadows) {
       this.sun.shadow.mapSize.set(1024, 1024);
@@ -110,7 +122,7 @@ export class CampRenderer3D {
     this.scene.add(this.sun);
     this.sun.target = new THREE.Object3D();
     this.scene.add(this.sun.target);
-    this.fireLight = new THREE.PointLight(0xff8c2e, 0, 900, 2);
+    this.fireLight = new THREE.PointLight(0xffa842, 0, 900, 1.4);
     this.scene.add(this.fireLight);
 
     this.staticRoot = new THREE.Group();   // rebuilt on paintBackground
@@ -155,9 +167,19 @@ export class CampRenderer3D {
   }
 
   resize() {
-    const w = innerWidth, h = innerHeight;
+    // Render small, display big with hard edges: that IS the pixel art.
+    const w = Math.max(160, Math.round(innerWidth / this.q.pix));
+    const h = Math.max(120, Math.round(innerHeight / this.q.pix));
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
+    this.canvas.style.width = '100%';
+    this.canvas.style.height = '100%';
+    this.canvas.style.imageRendering = 'pixelated';
+    const aspect = w / h;
+    const half = ISO_VIEW / 2;
+    this.camera.left = -half * aspect;
+    this.camera.right = half * aspect;
+    this.camera.top = half;
+    this.camera.bottom = -half;
     this.camera.updateProjectionMatrix();
   }
 
@@ -213,9 +235,11 @@ export class CampRenderer3D {
     this.bendAll();
   }
 
-  /** Apply the world-curve to every material currently in the scene. */
+  /** Apply the world-curve to every material currently in the scene.
+   *  The isometric look keeps the world flat, so this is a no-op there. */
   bendAll() {
     const s = this.q.bend;
+    if (!s) return;
     this.scene.traverse((o) => {
       if (!o.isMesh && !o.isInstancedMesh) return;
       const m = o.material;
@@ -709,18 +733,11 @@ export class CampRenderer3D {
     const me = players.find((p) => p.me);
     const focus = truckView && me?.driving ? truckView : me;
 
-    // --- camera: third-person, behind and above
-    if (focus) {
-      // close and low: the campers should dominate the frame the way
-      // villagers do, not sit in a distant diorama
-      // tuned so a camper stands ~45% of the frame — villager-sized, the way
-      // the reference art reads
-      const far = truckView && me?.driving ? 1.9 : 1;
-      this.camGoal.set(focus.x - 184 * far, 268 * far, focus.y + 314 * far);
-      this.camLook.set(focus.x, 62, focus.y);
-    }
-    this.camera.position.lerp(this.camGoal, 0.1);
-    this.camera.lookAt(this.camLook);
+    // --- camera: fixed isometric axis, slides but never turns
+    if (focus) this.camLook.set(focus.x, 0, focus.y);
+    this.camGoal.copy(this.camLook).addScaledVector(this.isoDir, 2200);
+    this.camera.position.lerp(this.camGoal, 0.14);
+    this.camera.lookAt(this.camera.position.clone().sub(this.isoDir));
 
     // --- clock: sun swings, colors warm at dusk, night dims everything
     const nf = nightFactor(world.tod);
@@ -728,15 +745,17 @@ export class CampRenderer3D {
     this.sun.position.set(
       this.camLook.x + Math.cos(ang) * 1200, 400 + Math.sin(ang) * 900, this.camLook.z - 500);
     this.sun.target.position.copy(this.camLook);
-    this.sun.intensity = 1.35 * (1 - nf * 0.9);
+    // Night is moonlit, not black — the reference reads clearly after dark,
+    // it just shifts blue so firelight can pop warm against it.
+    this.sun.intensity = 2.6 * (1 - nf * 0.72);
     const warm = this.map.features.sunset && nf > 0.05 && nf < 0.75;
-    this.sun.color.setHex(warm ? 0xff9a4a : 0xfff4dc);
-    this.hemi.intensity = 1.05 - nf * 0.72;
-    this.hemi.color.setHex(nf > 0.6 ? 0x2a3a6a : 0xcbe6ff);
-    const skyDay = this.map.features.snow ? 0xdff0fb : 0xbfe6f5;
-    const sky = new THREE.Color(skyDay).lerp(new THREE.Color(0x080a22), nf);
+    this.sun.color.setHex(warm ? 0xff9a4a : nf > 0.6 ? 0x9fb6e8 : 0xffe7bd);
+    this.hemi.intensity = 2.4 - nf * 0.95;
+    this.hemi.color.setHex(nf > 0.6 ? 0x5a76ad : 0x9ec0e8);
+    this.hemi.groundColor.setHex(nf > 0.6 ? 0x1e2a3a : 0x2d3a24);
+    const skyDay = this.map.features.snow ? 0x9dc4e0 : 0x74a8cc;
+    const sky = new THREE.Color(skyDay).lerp(new THREE.Color(this.cute.sky), nf);
     this.scene.background = sky;
-    this.scene.fog.color = sky;
 
     // --- fire
     const lit = world.fire.lit && world.fire.lvl > 0;
@@ -746,9 +765,13 @@ export class CampRenderer3D {
       this.flames.scale.set(s, s + Math.sin(now / 90) * 0.12, s);
       this.flames.rotation.y = now / 900;
     }
-    this.fireLight.position.set(this.firepitPos.x, 60, this.firepitPos.y);
-    this.fireLight.intensity = lit ? 2.2 * (0.4 + world.fire.lvl / 100) : 0;
-    for (const l of this.decorLights || []) l.intensity = nf * 1.6;
+    this.fireLight.position.set(this.firepitPos.x, 70, this.firepitPos.y);
+    // strong warm pool, flickering — the hero light of the whole scene
+    const flick = 0.88 + Math.sin(now / 70) * 0.06 + Math.sin(now / 31) * 0.06;
+    this.fireLight.intensity = lit ? 130000 * (0.45 + world.fire.lvl / 100) * flick * (0.5 + nf * 0.5) : 0;
+    this.fireLight.distance = 700 + world.fire.lvl * 4;
+    this.fireLight.decay = 1.4;
+    for (const l of this.decorLights || []) l.intensity = (0.35 + nf) * 26000;
 
     // --- players
     const seen = new Set();
@@ -897,6 +920,10 @@ export class CampRenderer3D {
     this.raycaster.setFromCamera(ndc, this.camera);
     const ray = this.raycaster.ray;
     const p = new THREE.Vector3();
+    if (!this.q.bend) { // flat world: the plane hit is exact
+      ray.intersectPlane(this.groundPlane, p);
+      return { x: p.x, y: p.z };
+    }
     const screenY = (t) => { ray.at(t, p); return this.projectBent(p.x, p.z).y; };
     // The curve gives the world a horizon: screen-Y rises to a peak and then
     // falls again, so bisect only on the near side of that peak.
