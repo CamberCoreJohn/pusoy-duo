@@ -735,7 +735,15 @@ export function createCamp(ctx) {
 
   // ------------------------------------------------------------ lifecycle
 
-  async function start({ soloMode }) {
+  async function start(opts) {
+    try { await startInner(opts); } catch (e) {
+      console.error('camp failed to start', e);
+      toast('Camp failed to load: ' + e.message, 5000);
+      active = false;
+    }
+  }
+
+  async function startInner({ soloMode }) {
     if (active) return;
     active = true;
     isHost = ctx.iAmAuthority();

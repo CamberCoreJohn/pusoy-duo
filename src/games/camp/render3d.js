@@ -6,7 +6,7 @@
 // Flat-shaded lambert materials give the cozy Animal-Crossing-ish look
 // cheaply enough to run beside a live video call.
 
-import { nightFactor, collides } from './world.js';
+import { nightFactor, collides, WORLD } from './world.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
 
@@ -44,6 +44,46 @@ const CUTE = {
  * ground curves away like a tiny planet. Patched into every material's
  * vertex stage — geometry and physics stay perfectly flat.
  */
+/**
+ * Sky backdrop drawn as stepped colour bands — the dithered-gradient look of
+ * pixel-art skies — with stars and a crescent moon at night.
+ */
+function skyTexture(night) {
+  const W = 128, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  const top = night ? [8, 14, 46] : [58, 122, 168];
+  const bot = night ? [26, 62, 92] : [150, 196, 214];
+  const BANDS = 9;
+  for (let i = 0; i < BANDS; i++) {
+    const t = i / (BANDS - 1);
+    x.fillStyle = `rgb(${top.map((v, k) => Math.round(v + (bot[k] - v) * t)).join(',')})`;
+    x.fillRect(0, Math.floor(i * H / BANDS), W, Math.ceil(H / BANDS) + 1);
+  }
+  if (night) {
+    let seed = 91;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < 90; i++) {
+      const sx = Math.floor(rnd() * W), sy = Math.floor(rnd() * H * 0.72);
+      x.fillStyle = rnd() < 0.25 ? '#bfe6ff' : '#ffffff';
+      x.fillRect(sx, sy, 1, 1);
+      if (rnd() < 0.12) { // a few bigger twinkles
+        x.fillRect(sx - 1, sy, 1, 1); x.fillRect(sx + 1, sy, 1, 1);
+        x.fillRect(sx, sy - 1, 1, 1); x.fillRect(sx, sy + 1, 1, 1);
+      }
+    }
+    x.fillStyle = '#f4f1d0'; // crescent moon
+    x.beginPath(); x.arc(26, 22, 9, 0, Math.PI * 2); x.fill();
+    x.fillStyle = `rgb(${top.join(',')})`;
+    x.beginPath(); x.arc(21, 19, 9, 0, Math.PI * 2); x.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
 /** Soft round contact shadow — every object in AC sits on one. */
 function shadowTexture() {
   const c = document.createElement('canvas');
@@ -192,6 +232,9 @@ export class CampRenderer3D {
     this.unlocked = unlocked;
     const root = this.staticRoot;
     root.clear();
+    // must exist before any structure tries to register a lamp or window
+    this.decorLights = [];
+    this.windows = [];
     const c = CUTE[map.id] || CUTE.lakeside;
     // the 3D view uses the sweeter palette; 2D keeps the original map colors
     const P = {
@@ -200,14 +243,21 @@ export class CampRenderer3D {
     };
     this.cute = c;
 
-    // ground — heavily subdivided so the world-curve shader has vertices to
-    // bend; with 2 triangles the whole plane just tilts.
+    // The camp is an island: the ground stops at the world edge so sky shows
+    // beyond it, and a darker skirt underneath reads as soil depth.
+    const gw = WORLD.w + 260, gh = WORLD.h + 260;
+    const skirt = new THREE.Mesh(
+      new THREE.BoxGeometry(gw, 90, gh),
+      new THREE.MeshLambertMaterial({ color: hex(c.path).multiplyScalar(0.55) }),
+    );
+    skirt.position.set(WORLD.w / 2, -46, WORLD.h / 2);
+    root.add(skirt);
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(4600, 4600, 72, 72),
+      new THREE.PlaneGeometry(gw, gh, 1, 1),
       new THREE.MeshLambertMaterial({ color: hex(P.grassTop) }),
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.set(1000, 0, 750);
+    ground.position.set(WORLD.w / 2, 0, WORLD.h / 2);
     ground.receiveShadow = this.q.shadows;
     root.add(ground);
 
@@ -224,15 +274,95 @@ export class CampRenderer3D {
       root.add(this.parkedTruck);
     } else this.parkedTruck = null;
     this.addGear(root, map, unlocked);
-    this.decorLights = [];
     for (const d of decor) {
       if (d.spot && d.spot !== map.id) continue;
       this.addDecor(root, d);
     }
     this.addFlora(root, map, c);
+    this.addProps(root, map, c);
     this.addClouds();
     this.addCritters();
     this.bendAll();
+  }
+
+  /** Fences, barrels, crates, bushes, rocks, a woodpile, lantern posts — the
+   *  clutter that makes a camp look lived in. */
+  addProps(root, map, c) {
+    const wood = new THREE.MeshLambertMaterial({ color: hex(c.trunk), flatShading: true });
+    const darkWood = new THREE.MeshLambertMaterial({ color: hex(c.trunk).multiplyScalar(0.7), flatShading: true });
+    const leaf = new THREE.MeshLambertMaterial({ color: hex(c.canopy[0]), flatShading: true });
+    const stone = new THREE.MeshLambertMaterial({ color: 0x6a6a72, flatShading: true });
+    const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+
+    // paddock fence: posts with two rails, tucked beside the market
+    const fx = map.market.x - 300, fz = map.market.y + 210;
+    for (let i = 0; i <= 6; i++) {
+      const post = box(9, 46, 9, wood);
+      post.position.set(fx + i * 62, 23, fz);
+      root.add(post);
+      if (i < 6) {
+        for (const ry of [30, 16]) {
+          const rail = box(62, 6, 5, darkWood);
+          rail.position.set(fx + i * 62 + 31, ry, fz);
+          root.add(rail);
+        }
+      }
+    }
+    // barrels + crates by the market counter
+    for (let i = 0; i < 3; i++) {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(15, 13, 34, 8), wood);
+      barrel.position.set(map.market.x - 40 - i * 36, 17, map.market.y + map.market.h + 26);
+      barrel.castShadow = this.q.shadows;
+      root.add(barrel);
+    }
+    for (let i = 0; i < 2; i++) {
+      const crate = box(30, 26, 30, darkWood);
+      crate.position.set(map.market.x + map.market.w + 30, 13 + i * 26, map.market.y + 40);
+      crate.castShadow = this.q.shadows;
+      root.add(crate);
+    }
+    // woodpile by the fire
+    for (let i = 0; i < 5; i++) {
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 54, 7), wood);
+      log.rotation.z = Math.PI / 2;
+      log.position.set(map.firepit.x - 130, 8 + Math.floor(i / 3) * 15, map.firepit.y + 90 + (i % 3) * 18);
+      root.add(log);
+    }
+    // lantern posts lining the path
+    for (const [lx, lz] of [[660, 640], [1090, 830]]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 74, 6), wood);
+      post.position.set(lx, 37, lz);
+      const arm = box(26, 5, 5, wood);
+      arm.position.set(lx + 12, 72, lz);
+      const lamp = box(15, 18, 15, new THREE.MeshBasicMaterial({ color: 0xffce6a }));
+      lamp.position.set(lx + 24, 64, lz);
+      root.add(post, arm, lamp);
+      const light = new THREE.PointLight(0xffb454, 0, 340, 1.5);
+      light.position.set(lx + 24, 64, lz);
+      root.add(light);
+      this.decorLights.push(light);
+    }
+    // scattered bushes and rocks, deterministic and off the colliders
+    let seed = 8081;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0, placed = 0; i < 300 && placed < 26; i++) {
+      const x = rnd() * WORLD.w, z = rnd() * WORLD.h;
+      if (collides(map, x, z, 46)) continue;
+      placed++;
+      if (rnd() < 0.55) {
+        const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(17 + rnd() * 9, 0), leaf);
+        bush.scale.y = 0.72;
+        bush.position.set(x, 12, z);
+        bush.castShadow = this.q.shadows;
+        root.add(bush);
+      } else {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(11 + rnd() * 8, 0), stone);
+        rock.position.set(x, 7, z);
+        rock.rotation.set(rnd(), rnd(), rnd());
+        rock.castShadow = this.q.shadows;
+        root.add(rock);
+      }
+    }
   }
 
   /** Apply the world-curve to every material currently in the scene.
@@ -460,6 +590,16 @@ export class CampRenderer3D {
     door.rotation.y = Math.PI / 4;
     door.position.set(0, t.h * 0.3, t.h * 0.42);
     g.add(door);
+    // a warm glowing doorway — lit windows are half the charm of these scenes
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xffc766 });
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(46, 40), glowMat);
+    glow.position.set(0, t.h * 0.26, t.h * 0.5 + 1);
+    g.add(glow);
+    this.windows.push(glowMat);
+    const tentLight = new THREE.PointLight(0xffb454, 0, 320, 1.6);
+    tentLight.position.set(0, t.h * 0.3, t.h * 0.55);
+    g.add(tentLight);
+    this.decorLights.push(tentLight);
     g.add(this.blobShadow(t.w * 0.62));
     g.position.set(t.x + t.w / 2, 0, t.y + t.h / 2);
     root.add(g);
@@ -492,7 +632,15 @@ export class CampRenderer3D {
       fl.position.set((i - 1) * 8, 24 - i * 4, 0);
       this.flames.add(fl);
     }
-    g.add(this.flames, this.blobShadow(f.r * 1.5));
+    // smoke drifting up off the fire
+    this.smoke = new THREE.Group();
+    const smokeMat = new THREE.MeshBasicMaterial({ color: 0xcfd6dd, transparent: true, opacity: 0.3 });
+    for (let i = 0; i < 5; i++) {
+      const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(9 + i * 3, 0), smokeMat.clone());
+      puff.userData.seed = i;
+      this.smoke.add(puff);
+    }
+    g.add(this.flames, this.smoke, this.blobShadow(f.r * 1.5));
     g.position.set(f.x, 0, f.y);
     root.add(g);
     this.firepitPos = { x: f.x, y: f.y };
@@ -753,9 +901,10 @@ export class CampRenderer3D {
     this.hemi.intensity = 2.4 - nf * 0.95;
     this.hemi.color.setHex(nf > 0.6 ? 0x5a76ad : 0x9ec0e8);
     this.hemi.groundColor.setHex(nf > 0.6 ? 0x1e2a3a : 0x2d3a24);
-    const skyDay = this.map.features.snow ? 0x9dc4e0 : 0x74a8cc;
-    const sky = new THREE.Color(skyDay).lerp(new THREE.Color(this.cute.sky), nf);
-    this.scene.background = sky;
+    // banded pixel sky; stars and a moon come out after dusk
+    if (!this.skyDay) { this.skyDay = skyTexture(false); this.skyNight = skyTexture(true); }
+    this.scene.background = nf > 0.45 ? this.skyNight : this.skyDay;
+    this.scene.backgroundIntensity = nf > 0.45 ? 0.75 + nf * 0.35 : 1;
 
     // --- fire
     const lit = world.fire.lit && world.fire.lvl > 0;
@@ -771,7 +920,18 @@ export class CampRenderer3D {
     this.fireLight.intensity = lit ? 130000 * (0.45 + world.fire.lvl / 100) * flick * (0.5 + nf * 0.5) : 0;
     this.fireLight.distance = 700 + world.fire.lvl * 4;
     this.fireLight.decay = 1.4;
-    for (const l of this.decorLights || []) l.intensity = (0.35 + nf) * 26000;
+    for (const l of this.decorLights || []) l.intensity = (0.3 + nf * 1.3) * 22000;
+    // window glow fades in with the dark
+    for (const m of this.windows || []) m.color.setHex(0xffc766).multiplyScalar(0.35 + nf * 0.65);
+    if (this.smoke) {
+      this.smoke.visible = lit;
+      this.smoke.children.forEach((puff, i) => {
+        const t = ((now / 2600) + i * 0.2) % 1;
+        puff.position.set(Math.sin(t * 5 + i) * 16, 44 + t * 190, Math.cos(t * 3 + i) * 12);
+        puff.scale.setScalar(0.5 + t * 1.4);
+        puff.material.opacity = 0.32 * (1 - t) * (0.4 + world.fire.lvl / 130);
+      });
+    }
 
     // --- players
     const seen = new Set();
