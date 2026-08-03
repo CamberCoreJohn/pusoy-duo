@@ -5,9 +5,9 @@
 //
 // Trick flow: after a play, the turn moves clockwise over players who still
 // hold cards. Passing moves the turn on; when everyone else still in the
-// round has passed, the trick clears and its owner leads fresh (or, if the
-// owner already finished, the next active player leads). Emptying your hand
-// earns the next place in `rankings` — the round continues until a single
+// round has passed, the trick clears and its owner leads fresh. Emptying
+// your hand earns the next place in `rankings` and closes the trick — the
+// next active player takes control. The round continues until a single
 // player is left holding cards.
 
 import { deal, removeCards, byId, sortCards, cardValue } from './cards.js';
@@ -30,7 +30,6 @@ export class PusoyEngine {
     this.mustIncludeLowest = true;
     this.rankings = [];      // seats in finishing order; last place appended at round end
     this.roundOver = false;
-    this.passStreak = 0;     // consecutive passes since the last play
     this.log = [];
   }
 
@@ -67,11 +66,9 @@ export class PusoyEngine {
     this.pile = v.combo;
     this.pileOwner = player;
     this.mustIncludeLowest = false;
-    this.passStreak = 0;
     this.log.push({ player, type: 'play', combo: v.combo.name, cards: cardIds });
 
-    const finishedNow = this.hands[player].length === 0;
-    if (finishedNow) {
+    if (this.hands[player].length === 0) {
       this.rankings.push(player);
       this.log.push({ player, type: 'finish', place: this.rankings.length });
       if (this._activeCount() <= 1) {
@@ -81,16 +78,22 @@ export class PusoyEngine {
         this.roundOver = true;
         return { ok: true };
       }
+      // A finishing play closes the trick: the next active player takes
+      // control with a fresh lead (nobody has to beat a ghost's cards).
+      this.pile = null;
+      this.pileOwner = -1;
+      this.turn = this._nextActive(player);
+      // carry the final play's cards so clients can still animate it
+      this.log.push({ player: this.turn, type: 'handover', by: player, cards: cardIds, combo: v.combo.name });
+      return { ok: true };
     }
 
-    const unbeatable = v.combo.shape === 1 && this._isUnbeatableSingle(v.combo, player);
-    if (unbeatable) {
+    if (v.combo.shape === 1 && this._isUnbeatableSingle(v.combo, player)) {
       // The highest card still in play cannot be answered: instant control.
-      // If its owner just finished, the lead falls to the next active player.
       this.log.push({ player, type: 'control', cards: cardIds, combo: v.combo.name });
       this.pile = null;
       this.pileOwner = -1;
-      this.turn = finishedNow ? this._nextActive(player) : player;
+      // turn stays with the player: fresh lead
     } else {
       this._advance(player);
     }
@@ -111,7 +114,6 @@ export class PusoyEngine {
     if (this.roundOver) return { ok: false, reason: 'Round is over' };
     if (player !== this.turn) return { ok: false, reason: 'Not your turn' };
     if (!this.pile) return { ok: false, reason: 'Cannot pass on a fresh lead' };
-    this.passStreak += 1;
     this.log.push({ player, type: 'pass' });
     this._advance(player);
     return { ok: true };
@@ -119,16 +121,11 @@ export class PusoyEngine {
 
   _advance(from) {
     this.turn = this._nextActive(from);
-    if (!this.pile) return;
-    const ownerActive = this.pileOwner >= 0 && this.hands[this.pileOwner].length > 0;
-    // Trick is won when the turn returns to its (active) owner, or — if the
-    // owner already finished on that play — when every remaining player has
-    // passed on it.
-    if ((ownerActive && this.turn === this.pileOwner)
-      || (!ownerActive && this.passStreak >= this._activeCount())) {
+    // Everyone else passed: the trick is won, its owner leads fresh. (A
+    // finished player never owns a live pile — finishing closes the trick.)
+    if (this.pile && this.turn === this.pileOwner) {
       this.pile = null;
       this.pileOwner = -1;
-      this.passStreak = 0;
     }
   }
 

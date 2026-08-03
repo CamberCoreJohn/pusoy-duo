@@ -76,12 +76,25 @@ export function classify(cards, rules = DEFAULT_RULES) {
   const ranks = sorted.map((c) => c.r);
   const uniqueRanks = [...new Set(ranks)];
   const flush = sorted.every((c) => c.s === sorted[0].s);
-  // No wrap-around: the lowest straight is 3-4-5-6-7 and the highest J-Q-K-A-2.
-  const straight = uniqueRanks.length === 5 && isConsecutive(uniqueRanks);
+  // Straights, low -> high:
+  //   3-4-5-6-7 ... 10-J-Q-K-A   (ranked by highest card)
+  //   A-2-3-4-5                  (second highest)
+  //   J-Q-K-A-2                  (the highest straight)
+  // Other wrap-arounds (e.g. 2-3-4-5-6) are not straights. Ranks: 3=3 ... A=14, 2=15.
+  const consecutive = uniqueRanks.length === 5 && isConsecutive(uniqueRanks);
+  const a2345 = uniqueRanks.length === 5
+    && uniqueRanks[0] === 3 && uniqueRanks[1] === 4 && uniqueRanks[2] === 5
+    && uniqueRanks[3] === 14 && uniqueRanks[4] === 15;
+  const jqka2 = consecutive && uniqueRanks[0] === 11;
+  const straightTier = jqka2 ? 2 : a2345 ? 1 : consecutive ? 0 : -1;
+  const straight = straightTier >= 0;
+  // Tiebreak within a tier by the deck-highest card (covers suit): in both
+  // special straights that is the 2.
+  const straightKey = straightTier * 1000 + cardValue(high);
 
   const five = (cat, key) => ({ shape: SHAPE.FIVE, cat, key, name: FIVE_NAME[cat], cards: sorted });
 
-  if (straight && flush) return five(FIVE.STRAIGHT_FLUSH, cardValue(high));
+  if (straight && flush) return five(FIVE.STRAIGHT_FLUSH, straightKey);
 
   const counts = [...groups.entries()].map(([r, cs]) => ({ r, n: cs.length })).sort((a, b) => b.n - a.n);
 
@@ -92,7 +105,7 @@ export function classify(cards, rules = DEFAULT_RULES) {
     const key = rules.flushBySuit ? sorted[0].s * 100 + high.r : cardValue(high);
     return five(FIVE.FLUSH, key);
   }
-  if (straight) return five(FIVE.STRAIGHT, cardValue(high));
+  if (straight) return five(FIVE.STRAIGHT, straightKey);
 
   return null;
 }

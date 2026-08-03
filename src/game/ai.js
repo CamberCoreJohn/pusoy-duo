@@ -35,7 +35,7 @@ export function enumerateCombos(hand, shapes, rules = DEFAULT_RULES) {
 }
 
 const highestValue = (combo) => cardValue(combo.cards[combo.cards.length - 1]);
-const ACE = 12; // rank index of A (3=0 ... A=12, 2=13)
+const ACE = 14; // ranks run 3=3 ... A=14, 2=15 (MAX_RANK)
 
 /** cardId -> size of the rank group it belongs to (pair/triple/quad). */
 function rankUnits(hand) {
@@ -124,7 +124,7 @@ export function chooseAiPlay(hand, pile, { mustInclude = null, rules = DEFAULT_R
   // answers would shred a set or burn a power card. Roll the dice a bit so
   // the bot stays human-flavoured.
   if (!urgent && minOpp >= 5) {
-    const pileCheap = cardValue(pile.cards[pile.cards.length - 1]) < cardValue({ r: 9, s: 0 }); // < Q
+    const pileCheap = cardValue(pile.cards[pile.cards.length - 1]) < cardValue({ r: 12, s: 0 }); // < Q
     const expensive = pickScore >= 2500;
     if (pileCheap && expensive && rand() < 0.55) return null;
     // Occasionally duck even a fair fight to mix up reads.

@@ -463,8 +463,8 @@ button.linkish:hover { color: var(--text); }
   touch-action: none; /* horizontal drags rearrange cards; don't let iOS eat them */
 }
 .hand-area .card.dragging {
-  opacity: 0.9; transform: translateY(-34px) scale(1.08) rotate(2deg);
-  transition: none; z-index: 12;
+  /* the float transform is driven inline by the pointer; keep it snappy */
+  opacity: 0.92; transition: none; z-index: 12;
   box-shadow: 0 0 0 2px var(--accent-2), 0 18px 30px rgba(0, 0, 0, 0.6);
 }
 .hand-area .card { margin-left: calc(var(--card-w) * -0.42); flex-shrink: 0; }

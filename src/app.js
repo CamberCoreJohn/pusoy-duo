@@ -935,28 +935,48 @@ els.handArea.addEventListener('pointermove', (e) => {
     drag.el.classList.add('dragging');
     try { drag.el.setPointerCapture(e.pointerId); } catch { /* fine without capture */ }
   }
-  // live-reorder: slot the dragged card before the first sibling whose
-  // midpoint is right of the pointer
+  const hand = els.handArea;
+  const px = e.clientX - hand.getBoundingClientRect().left; // pointer in hand coords
+  // Reorder when the pointer crosses a sibling's midpoint. offsetLeft is
+  // layout-truth — unaffected by the float transform or FLIP animations.
   let before = null;
-  for (const c of els.handArea.children) {
+  for (const c of hand.children) {
     if (c === drag.el) continue;
-    const r = c.getBoundingClientRect();
-    if (e.clientX < r.left + r.width / 2) { before = c; break; }
+    if (px < c.offsetLeft + c.offsetWidth / 2) { before = c; break; }
   }
-  els.handArea.insertBefore(drag.el, before);
+  if (before !== drag.el.nextElementSibling && before !== drag.el) {
+    // FLIP: siblings glide into their new slots instead of teleporting
+    const prevLefts = new Map([...hand.children].map((c) => [c, c.offsetLeft]));
+    hand.insertBefore(drag.el, before);
+    for (const c of hand.children) {
+      if (c === drag.el) continue;
+      const d = prevLefts.get(c) - c.offsetLeft;
+      if (d) c.animate([{ transform: `translateX(${d}px)` }, { transform: 'none' }], { duration: 140, easing: 'ease-out' });
+    }
+  }
+  // the dragged card floats with the finger, lifted above the fan
+  const dx = px - (drag.el.offsetLeft + drag.el.offsetWidth / 2);
+  drag.el.style.transform = `translate(${dx}px, -34px) scale(1.08) rotate(2deg)`;
 });
 
 const endDrag = () => {
   if (!drag) return;
-  if (drag.active) {
-    drag.el.classList.remove('dragging');
-    customOrder = [...els.handArea.children].map((c) => c.dataset.id);
-    sortMode = 'custom';
-    els.btnSort.textContent = 'SORT: MINE';
-    suppressCardClick = true;
-    setTimeout(() => { suppressCardClick = false; }, 80);
-  }
+  const d = drag;
   drag = null;
+  if (!d.active) return;
+  // settle into the slot with a short glide
+  const from = d.el.style.transform;
+  const commit = () => { d.el.style.transform = ''; d.el.classList.remove('dragging'); };
+  if (from) {
+    d.el.animate([{ transform: from }, { transform: 'none' }],
+      { duration: 150, easing: 'cubic-bezier(0.2, 0.8, 0.3, 1)' }).onfinish = commit;
+    setTimeout(commit, 240); // safety if animations are throttled
+  } else commit();
+  customOrder = [...els.handArea.children].map((c) => c.dataset.id);
+  sortMode = 'custom';
+  els.btnSort.textContent = 'SORT: MINE';
+  suppressCardClick = true;
+  setTimeout(() => { suppressCardClick = false; }, 80);
 };
 els.handArea.addEventListener('pointerup', endDrag);
 els.handArea.addEventListener('pointercancel', endDrag);
@@ -1038,6 +1058,24 @@ function controlFx(log) {
   }, flightMs + 1500);
 }
 
+/**
+ * A player's finishing play: fly it in, let it sit for a beat, then it
+ * sweeps back to their (now medalled) spot and the heir gets the crown toast.
+ */
+function finishFx(log, you) {
+  const src = seatRect(log.by);
+  const temp = log.cards.map((id) => cardEl(id));
+  els.pileCards.append(...temp);
+  const flightMs = src ? flyCards(src, temp, { faceDown: log.by !== you }) : 0;
+  setTimeout(() => {
+    if (gameActive) {
+      swooshPile(temp, seatRect(log.by));
+      showToast(log.player === you ? 'You take control 👑' : `${seatName(log.player)} takes control 👑`, 2200, 'info');
+    }
+    temp.forEach((el) => el.remove());
+  }, flightMs + 1100);
+}
+
 function applyState(snap) {
   if (!gameActive) showGame(); // guest: first snapshot after setup
   state = snap;
@@ -1063,6 +1101,10 @@ function applyState(snap) {
   // unbeatable card: sunrays over the play, then it sweeps to its owner
   if (snap.logN !== lastLogN && snap.lastLog?.type === 'control') {
     controlFx(snap.lastLog);
+  }
+  // someone finished: animate their final play, then the next player inherits
+  if (snap.logN !== lastLogN && snap.lastLog?.type === 'handover' && !snap.roundOver) {
+    finishFx(snap.lastLog, snap.you);
   }
   lastLogN = snap.logN;
 

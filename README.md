@@ -68,7 +68,11 @@ order (flushes together) — display-only.
 
 - Filipino suit order: ♦ > ♥ > ♠ > ♣; ranks 3…A, 2 highest
 - Singles, pairs, triples, five-card hands (straight < flush < full house < quads < straight flush)
-- No wrap-around straights; flushes compared suit-first (house rule, `flushBySuit` in `combos.js`)
+- Straights low→high: 3-4-5-6-7 … 10-J-Q-K-A, then **A-2-3-4-5**, then
+  **J-Q-K-A-2** (highest). Other wrap-arounds (2-3-4-5-6) are invalid.
+  Flushes compared suit-first (house rule, `flushBySuit` in `combos.js`)
+- Finishing your hand closes the trick — the next player takes control
+- An unbeatable single (highest card left in play) takes control instantly
 - 13 cards each; holder of the lowest card in play leads and must include it
   (with fewer than 4 players the 3♣ may not be dealt)
 - Passing moves the turn on; when everyone else has passed, the trick owner leads fresh
